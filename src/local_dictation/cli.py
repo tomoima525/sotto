@@ -1,0 +1,190 @@
+"""CLI entry point with headless test subcommands for each pipeline stage.
+
+Transcripts printed here go to your terminal only; nothing is written to disk.
+"""
+
+from __future__ import annotations
+
+import argparse
+import logging
+import sys
+import time
+
+from .config import Config
+
+
+def _setup_logging(debug: bool) -> None:
+    logging.basicConfig(
+        level=logging.DEBUG if debug else logging.INFO,
+        format="%(asctime)s %(name)s %(levelname)s %(message)s",
+        stream=sys.stderr,
+    )
+
+
+def cmd_download(args, config: Config) -> None:
+    from . import models
+
+    for repo in (config.whisper_model, config.llm_model):
+        print(f"Downloading {repo} ...")
+        path = models.download(repo)
+        print(f"  -> {path}")
+
+
+def _record_seconds(seconds: float):
+    from .recorder import Recorder
+
+    recorder = Recorder()
+    print(f"Recording for {seconds:.0f}s — speak now...")
+    recorder.start()
+    time.sleep(seconds)
+    audio = recorder.stop()
+    return audio
+
+
+def cmd_record(args, config: Config) -> None:
+    import numpy as np
+
+    from .recorder import SAMPLE_RATE
+
+    audio = _record_seconds(args.seconds)
+    rms = float(np.sqrt(np.mean(audio**2))) if len(audio) else 0.0
+    peak = float(np.max(np.abs(audio))) if len(audio) else 0.0
+    print(f"Captured {len(audio) / SAMPLE_RATE:.2f}s  rms={rms:.5f}  peak={peak:.3f}")
+    if rms < 0.003:
+        print("WARNING: very low level — check mic permission/input device")
+
+
+def cmd_transcribe(args, config: Config) -> None:
+    from .transcriber import Transcriber
+
+    transcriber = Transcriber(config.whisper_model, config.language)
+    print("Warming up Whisper...")
+    transcriber.warmup()
+    audio = _record_seconds(args.seconds)
+    t0 = time.monotonic()
+    text = transcriber.transcribe(audio)
+    print(f"({time.monotonic() - t0:.1f}s) Transcript: {text!r}")
+
+
+def cmd_clean(args, config: Config) -> None:
+    from .cleaner import Cleaner
+
+    cleaner = Cleaner(config.llm_model)
+    print("Loading LLM...")
+    cleaner.warmup()
+    t0 = time.monotonic()
+    cleaned = cleaner.clean(args.text)
+    print(f"({time.monotonic() - t0:.1f}s) Cleaned: {cleaned!r}")
+
+
+def cmd_inject(args, config: Config) -> None:
+    from .injector import accessibility_trusted, inject
+
+    if not accessibility_trusted():
+        print("WARNING: process is not Accessibility-trusted; paste may not work.")
+    print(f"Injecting in {args.delay:.0f}s — focus a text field now...")
+    time.sleep(args.delay)
+    inject(args.text)
+    print("Done. Check the focused field and that your old clipboard is restored.")
+
+
+def cmd_hotkey_test(args, config: Config) -> None:
+    from .hotkey import HotkeyListener
+    from .injector import accessibility_trusted
+
+    print(f"Accessibility trusted: {accessibility_trusted()}")
+    print(
+        f"Watching hotkey {config.hotkey!r}. Hold and release it; Ctrl+C to exit.\n"
+        "If nothing prints when you press it, grant your terminal Input Monitoring\n"
+        "in System Settings > Privacy & Security, then restart the terminal."
+    )
+    listener = HotkeyListener(
+        config.hotkey,
+        on_hold_start=lambda: print("DOWN"),
+        on_hold_end=lambda: print("UP"),
+    )
+    listener.start()
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        listener.stop()
+
+
+def cmd_run(args, config: Config) -> None:
+    if args.no_menubar:
+        from .hotkey import HotkeyListener
+        from .pipeline import Pipeline
+
+        pipeline = Pipeline(config)
+        pipeline.start()
+        listener = HotkeyListener(
+            config.hotkey,
+            on_hold_start=pipeline.begin_recording,
+            on_hold_end=pipeline.end_recording,
+        )
+        listener.start()
+        print(
+            f"Loading models, then hold {config.hotkey!r} to dictate. Ctrl+C to exit."
+        )
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            listener.stop()
+            pipeline.shutdown()
+    else:
+        from .app import run_app
+
+        run_app()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        prog="local-dictation", description="Fully-local dictation for macOS"
+    )
+    parser.add_argument("--debug", action="store_true", help="verbose logging")
+    sub = parser.add_subparsers(dest="command")
+
+    sub.add_parser("download", help="download models into the HF cache")
+
+    p = sub.add_parser("record", help="test mic capture")
+    p.add_argument("--seconds", type=float, default=3)
+
+    p = sub.add_parser("transcribe", help="record then transcribe")
+    p.add_argument("--seconds", type=float, default=5)
+
+    p = sub.add_parser("clean", help="run LLM cleanup on a string")
+    p.add_argument("text")
+
+    p = sub.add_parser("inject", help="paste text into the focused app")
+    p.add_argument("text")
+    p.add_argument("--delay", type=float, default=3)
+
+    sub.add_parser("hotkey-test", help="test hotkey capture + permission doctor")
+
+    p = sub.add_parser("run", help="run the app (default: menu bar)")
+    p.add_argument("--no-menubar", action="store_true", help="headless terminal mode")
+
+    args = parser.parse_args()
+    _setup_logging(args.debug)
+    config = Config.load()
+
+    commands = {
+        "download": cmd_download,
+        "record": cmd_record,
+        "transcribe": cmd_transcribe,
+        "clean": cmd_clean,
+        "inject": cmd_inject,
+        "hotkey-test": cmd_hotkey_test,
+        "run": cmd_run,
+    }
+    if args.command is None:
+        args.no_menubar = False
+        cmd_run(args, config)
+    else:
+        commands[args.command](args, config)
+
+
+if __name__ == "__main__":
+    main()
