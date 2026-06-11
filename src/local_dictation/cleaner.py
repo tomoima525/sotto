@@ -64,8 +64,12 @@ class Cleaner:
             return
         from mlx_lm import load
 
+        from . import models
+
         t0 = time.monotonic()
-        self._model, self._tokenizer = load(self.model_repo)
+        # Resolve to a local path ourselves (cache-first) so mlx_lm.load
+        # doesn't hit the HuggingFace API on every launch.
+        self._model, self._tokenizer = load(models.download(self.model_repo))
         log.info("LLM loaded in %.1fs", time.monotonic() - t0)
         self._build_prefix_cache()
 

@@ -20,9 +20,16 @@ def is_cached(repo_id: str) -> bool:
 
 
 def download(repo_id: str) -> str:
-    """Download a model repo (no-op if cached). Returns the local snapshot path."""
-    log.info("Ensuring model is cached: %s", repo_id)
-    return snapshot_download(repo_id)
+    """Return the local snapshot path, downloading only if not fully cached.
+
+    Cache-first so launches never touch the network (or fail offline) once
+    the models are present.
+    """
+    try:
+        return snapshot_download(repo_id, local_files_only=True)
+    except (LocalEntryNotFoundError, FileNotFoundError, OSError):
+        log.info("Model not cached, downloading: %s", repo_id)
+        return snapshot_download(repo_id)
 
 
 def resolve_whisper_path(repo_id: str) -> str:
