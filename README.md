@@ -46,13 +46,14 @@ uv run local-dictation run        # menu bar app
 
 Hold **Right Option (⌥)**, speak, release. The cleaned text is pasted into the focused text field and your previous clipboard is restored.
 
-Menu bar: 🎤 idle · 🔴 recording · ✍️ processing. The menu lets you toggle LLM cleanup, change the hotkey (Right Option / Right Command / F13), and switch Whisper models.
+Menu bar: 🎤 idle · 🔴 recording · ✍️ processing. The menu lets you toggle LLM cleanup, pick the microphone (the **Microphone** submenu shows which device is in use — virtual devices from Loom/Zoom/etc. can silently become the system default), change the hotkey (Right Option / Right Command / F13), and switch Whisper models.
 
 Config lives at `~/Library/Application Support/local-dictation/config.toml`.
 
 ### Testing each stage
 
 ```sh
+uv run local-dictation devices                # list input devices, show selected
 uv run local-dictation record --seconds 3     # mic level check
 uv run local-dictation transcribe --seconds 5 # record + Whisper
 uv run local-dictation clean "um so I think uh we should ship it"

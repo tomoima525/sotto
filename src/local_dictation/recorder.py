@@ -15,9 +15,40 @@ log = logging.getLogger(__name__)
 
 SAMPLE_RATE = 16_000
 
+DEFAULT_DEVICE = "default"
+
+
+def list_input_devices() -> list[str]:
+    """Names of all devices that can record, deduplicated, in device order."""
+    names: list[str] = []
+    for d in sd.query_devices():
+        if d["max_input_channels"] > 0 and d["name"] not in names:
+            names.append(d["name"])
+    return names
+
+
+def default_input_device() -> str | None:
+    """Name of the system default input device."""
+    try:
+        return sd.query_devices(sd.default.device[0])["name"]
+    except (sd.PortAudioError, ValueError, TypeError):
+        return None
+
+
+def resolve_input_device(name: str | None) -> int | None:
+    """Map a stored device name to a PortAudio index; None means system default."""
+    if name in (None, "", DEFAULT_DEVICE):
+        return None
+    for i, d in enumerate(sd.query_devices()):
+        if d["max_input_channels"] > 0 and d["name"] == name:
+            return i
+    log.warning("Input device %r not found; using system default", name)
+    return None
+
 
 class Recorder:
-    def __init__(self) -> None:
+    def __init__(self, device_name: str = DEFAULT_DEVICE) -> None:
+        self.device_name = device_name
         self._chunks: list[np.ndarray] = []
         self._stream: sd.InputStream | None = None
         self._lock = threading.Lock()
@@ -35,6 +66,7 @@ class Recorder:
                 samplerate=SAMPLE_RATE,
                 channels=1,
                 dtype="float32",
+                device=resolve_input_device(self.device_name),
                 callback=self._callback,
             )
             self._stream.start()

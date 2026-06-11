@@ -12,6 +12,7 @@ from . import models
 from .config import Config, HOTKEY_CHOICES, WHISPER_MODEL_CHOICES
 from .hotkey import HotkeyListener
 from .pipeline import Pipeline, State
+from .recorder import DEFAULT_DEVICE, default_input_device, list_input_devices
 
 log = logging.getLogger(__name__)
 
@@ -55,8 +56,12 @@ class DictationApp(rumps.App):
             item.state = repo == self.config.whisper_model
             model_menu.add(item)
 
+        self.mic_menu = rumps.MenuItem("Microphone")
+        self._populate_mic_menu()
+
         self.menu = [
             self.cleanup_item,
+            self.mic_menu,
             hotkey_menu,
             model_menu,
             None,
@@ -98,6 +103,44 @@ class DictationApp(rumps.App):
 
     def _state_changed(self, state: State) -> None:
         self._set_title(STATE_TITLES.get(state, "🎤"))
+
+    # -- microphone menu --
+
+    def _populate_mic_menu(self) -> None:
+        menu = self.mic_menu
+        for key in list(menu.keys()):
+            del menu[key]
+
+        system_default = default_input_device()
+        label = "System Default"
+        if system_default:
+            label = f"System Default ({system_default})"
+        item = rumps.MenuItem(label, callback=self._pick_mic)
+        item._device_name = DEFAULT_DEVICE
+        item.state = self.config.input_device == DEFAULT_DEVICE
+        menu.add(item)
+
+        for name in list_input_devices():
+            item = rumps.MenuItem(name, callback=self._pick_mic)
+            item._device_name = name
+            item.state = name == self.config.input_device
+            menu.add(item)
+
+        menu.add(None)
+        menu.add(rumps.MenuItem("Refresh Devices", callback=self._refresh_mics))
+
+    def _pick_mic(self, sender) -> None:
+        name = sender._device_name
+        for item in self.mic_menu.values():
+            if hasattr(item, "_device_name"):
+                item.state = item._device_name == name
+        self.config.input_device = name
+        self.config.save()
+        self.pipeline.recorder.device_name = name
+        log.info("Input device set to %r", name)
+
+    def _refresh_mics(self, sender) -> None:
+        self._populate_mic_menu()
 
     # -- menu callbacks (run on the main thread) --
 

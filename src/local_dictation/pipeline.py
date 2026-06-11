@@ -40,7 +40,7 @@ class Pipeline:
         self._on_state_change = on_state_change
         self.state = State.LOADING
 
-        self.recorder = Recorder()
+        self.recorder = Recorder(device_name=config.input_device)
         self.transcriber = Transcriber(config.whisper_model, config.language)
         self.cleaner = Cleaner(config.llm_model)
 

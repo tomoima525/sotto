@@ -33,6 +33,7 @@ class Config:
     llm_model: str = DEFAULT_LLM_MODEL
     cleanup_enabled: bool = True
     language: str = "auto"  # "auto" | whisper language code ("en", "ja", ...)
+    input_device: str = "default"  # device name, or "default" for system default
 
     @classmethod
     def load(cls) -> "Config":

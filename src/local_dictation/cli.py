@@ -30,11 +30,31 @@ def cmd_download(args, config: Config) -> None:
         print(f"  -> {path}")
 
 
-def _record_seconds(seconds: float):
-    from .recorder import Recorder
+def cmd_devices(args, config: Config) -> None:
+    from .recorder import DEFAULT_DEVICE, default_input_device, list_input_devices
 
-    recorder = Recorder()
-    print(f"Recording for {seconds:.0f}s — speak now...")
+    system_default = default_input_device()
+    for name in list_input_devices():
+        markers = []
+        if name == system_default:
+            markers.append("system default")
+        if name == config.input_device or (
+            config.input_device == DEFAULT_DEVICE and name == system_default
+        ):
+            markers.append("selected")
+        suffix = f"  ({', '.join(markers)})" if markers else ""
+        print(f"{name}{suffix}")
+
+
+def _record_seconds(seconds: float, config: Config):
+    from .recorder import Recorder, resolve_input_device
+
+    recorder = Recorder(device_name=config.input_device)
+    import sounddevice as sd
+
+    index = resolve_input_device(config.input_device)
+    device = sd.query_devices(index if index is not None else sd.default.device[0])
+    print(f"Recording for {seconds:.0f}s from {device['name']!r} — speak now...")
     recorder.start()
     time.sleep(seconds)
     audio = recorder.stop()
@@ -46,7 +66,7 @@ def cmd_record(args, config: Config) -> None:
 
     from .recorder import SAMPLE_RATE
 
-    audio = _record_seconds(args.seconds)
+    audio = _record_seconds(args.seconds, config)
     rms = float(np.sqrt(np.mean(audio**2))) if len(audio) else 0.0
     peak = float(np.max(np.abs(audio))) if len(audio) else 0.0
     print(f"Captured {len(audio) / SAMPLE_RATE:.2f}s  rms={rms:.5f}  peak={peak:.3f}")
@@ -60,7 +80,7 @@ def cmd_transcribe(args, config: Config) -> None:
     transcriber = Transcriber(config.whisper_model, config.language)
     print("Warming up Whisper...")
     transcriber.warmup()
-    audio = _record_seconds(args.seconds)
+    audio = _record_seconds(args.seconds, config)
     t0 = time.monotonic()
     text = transcriber.transcribe(audio)
     print(f"({time.monotonic() - t0:.1f}s) Transcript: {text!r}")
@@ -148,6 +168,8 @@ def main() -> None:
 
     sub.add_parser("download", help="download models into the HF cache")
 
+    sub.add_parser("devices", help="list audio input devices")
+
     p = sub.add_parser("record", help="test mic capture")
     p.add_argument("--seconds", type=float, default=3)
 
@@ -172,6 +194,7 @@ def main() -> None:
 
     commands = {
         "download": cmd_download,
+        "devices": cmd_devices,
         "record": cmd_record,
         "transcribe": cmd_transcribe,
         "clean": cmd_clean,
