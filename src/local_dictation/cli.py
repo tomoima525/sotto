@@ -21,6 +21,22 @@ def _setup_logging(debug: bool) -> None:
     )
 
 
+def _disable_tqdm_mp_lock() -> None:
+    """Give tqdm a plain threading lock instead of its default
+    multiprocessing.RLock.
+
+    mlx_whisper creates a tqdm bar on every transcribe; tqdm's default write
+    lock is a multiprocessing semaphore whose finalizer doesn't run on
+    Ctrl+C, leaving a 'leaked semaphore' resource_tracker warning at exit.
+    We never fork workers, so a thread lock is sufficient.
+    """
+    import threading
+
+    from tqdm import tqdm
+
+    tqdm.set_lock(threading.RLock())
+
+
 def cmd_download(args, config: Config) -> None:
     from . import models
 
@@ -190,6 +206,7 @@ def main() -> None:
 
     args = parser.parse_args()
     _setup_logging(args.debug)
+    _disable_tqdm_mp_lock()
     config = Config.load()
 
     commands = {
