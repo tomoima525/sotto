@@ -9,7 +9,7 @@ import rumps
 from libdispatch import dispatch_async, dispatch_get_main_queue
 
 from . import models
-from .config import Config, HOTKEY_CHOICES, WHISPER_MODEL_CHOICES
+from .config import Config, HOTKEY_CHOICES, LANGUAGE_CHOICES, WHISPER_MODEL_CHOICES
 from .hotkey import HotkeyListener
 from .pipeline import Pipeline, State
 from .recorder import DEFAULT_DEVICE, default_input_device, list_input_devices
@@ -31,9 +31,9 @@ HOTKEY_LABELS = {
 
 
 class DictationApp(rumps.App):
-    def __init__(self) -> None:
+    def __init__(self, config: Config | None = None) -> None:
         super().__init__("⏳", quit_button=None)
-        self.config = Config.load()
+        self.config = config if config is not None else Config.load()
 
         self.cleanup_item = rumps.MenuItem(
             "Cleanup with LLM", callback=self._toggle_cleanup
@@ -56,11 +56,19 @@ class DictationApp(rumps.App):
             item.state = repo == self.config.whisper_model
             model_menu.add(item)
 
+        language_menu = rumps.MenuItem("Language")
+        for code, label in LANGUAGE_CHOICES.items():
+            item = rumps.MenuItem(label, callback=self._pick_language)
+            item._language_code = code
+            item.state = code == self.config.language
+            language_menu.add(item)
+
         self.mic_menu = rumps.MenuItem("Microphone")
         self._populate_mic_menu()
 
         self.menu = [
             self.cleanup_item,
+            language_menu,
             self.mic_menu,
             hotkey_menu,
             model_menu,
@@ -103,6 +111,15 @@ class DictationApp(rumps.App):
 
     def _state_changed(self, state: State) -> None:
         self._set_title(STATE_TITLES.get(state, "🎤"))
+
+    def _pick_language(self, sender) -> None:
+        code = sender._language_code
+        for item in self.menu["Language"].values():
+            item.state = item._language_code == code
+        self.config.language = code
+        self.config.save()
+        self.pipeline.transcriber.language = code
+        log.info("Language set to %r", code)
 
     # -- microphone menu --
 
@@ -183,5 +200,5 @@ class DictationApp(rumps.App):
         rumps.quit_application()
 
 
-def run_app() -> None:
-    DictationApp().run()
+def run_app(config: Config | None = None) -> None:
+    DictationApp(config).run()

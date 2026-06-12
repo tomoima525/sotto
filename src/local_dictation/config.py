@@ -25,6 +25,13 @@ WHISPER_MODEL_CHOICES = [
 
 HOTKEY_CHOICES = ["alt_r", "cmd_r", "f13"]
 
+# value stored in config -> menu label ("auto" lets Whisper detect from audio)
+LANGUAGE_CHOICES = {
+    "auto": "Universal (detect from audio)",
+    "en": "English",
+    "ja": "Japanese",
+}
+
 
 @dataclass
 class Config:

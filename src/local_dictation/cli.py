@@ -10,7 +10,7 @@ import logging
 import sys
 import time
 
-from .config import Config
+from .config import Config, LANGUAGE_CHOICES
 
 
 def _setup_logging(debug: bool) -> None:
@@ -93,7 +93,7 @@ def cmd_record(args, config: Config) -> None:
 def cmd_transcribe(args, config: Config) -> None:
     from .transcriber import Transcriber
 
-    transcriber = Transcriber(config.whisper_model, config.language)
+    transcriber = Transcriber(config.whisper_model, args.language or config.language)
     print("Warming up Whisper...")
     transcriber.warmup()
     audio = _record_seconds(args.seconds, config)
@@ -148,6 +148,10 @@ def cmd_hotkey_test(args, config: Config) -> None:
 
 
 def cmd_run(args, config: Config) -> None:
+    if args.language:
+        # Per-invocation override; persisted only if the user later changes
+        # settings via the menu.
+        config.language = args.language
     if args.no_menubar:
         from .hotkey import HotkeyListener
         from .pipeline import Pipeline
@@ -172,7 +176,7 @@ def cmd_run(args, config: Config) -> None:
     else:
         from .app import run_app
 
-        run_app()
+        run_app(config)
 
 
 def main() -> None:
@@ -191,6 +195,11 @@ def main() -> None:
 
     p = sub.add_parser("transcribe", help="record then transcribe")
     p.add_argument("--seconds", type=float, default=5)
+    p.add_argument(
+        "--language",
+        choices=list(LANGUAGE_CHOICES),
+        help="transcription language (default: config value; auto = detect from audio)",
+    )
 
     p = sub.add_parser("clean", help="run LLM cleanup on a string")
     p.add_argument("text")
@@ -203,6 +212,11 @@ def main() -> None:
 
     p = sub.add_parser("run", help="run the app (default: menu bar)")
     p.add_argument("--no-menubar", action="store_true", help="headless terminal mode")
+    p.add_argument(
+        "--language",
+        choices=list(LANGUAGE_CHOICES),
+        help="transcription language for this run (default: config value)",
+    )
 
     args = parser.parse_args()
     _setup_logging(args.debug)
@@ -221,6 +235,7 @@ def main() -> None:
     }
     if args.command is None:
         args.no_menubar = False
+        args.language = None
         cmd_run(args, config)
     else:
         commands[args.command](args, config)
