@@ -181,7 +181,7 @@ def cmd_run(args, config: Config) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        prog="local-dictation", description="Fully-local dictation for macOS"
+        prog="sotto", description="Sotto — fully-local dictation for macOS"
     )
     parser.add_argument("--debug", action="store_true", help="verbose logging")
     sub = parser.add_subparsers(dest="command")

@@ -191,7 +191,7 @@ class DictationApp(rumps.App):
         self.config.whisper_model = repo
         self.config.save()
         rumps.notification(
-            "Local Dictation", "", "Whisper model changed — restart the app to apply."
+            "Sotto", "", "Whisper model changed — restart the app to apply."
         )
 
     def _quit(self, sender) -> None:

@@ -410,39 +410,6 @@ wheels = [
 ]
 
 [[package]]
-name = "local-dictation"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "huggingface-hub" },
-    { name = "mlx-lm" },
-    { name = "mlx-whisper" },
-    { name = "numpy" },
-    { name = "pynput" },
-    { name = "pyobjc-framework-cocoa" },
-    { name = "pyobjc-framework-libdispatch" },
-    { name = "pyobjc-framework-quartz" },
-    { name = "rumps" },
-    { name = "sounddevice" },
-    { name = "tomli-w" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "huggingface-hub" },
-    { name = "mlx-lm", specifier = ">=0.31.3,<0.32" },
-    { name = "mlx-whisper", specifier = ">=0.4.3" },
-    { name = "numpy" },
-    { name = "pynput", specifier = ">=1.8.2" },
-    { name = "pyobjc-framework-cocoa", specifier = ">=10.0" },
-    { name = "pyobjc-framework-libdispatch", specifier = ">=10.0" },
-    { name = "pyobjc-framework-quartz", specifier = ">=10.0" },
-    { name = "rumps", specifier = ">=0.4.0" },
-    { name = "sounddevice", specifier = ">=0.5.5" },
-    { name = "tomli-w" },
-]
-
-[[package]]
 name = "markdown-it-py"
 version = "4.2.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1377,6 +1344,39 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/94/e7/b2c673351809dca68a0e064b6af791aa332cf192da575fd474ed7d6f16a2/six-1.17.0.tar.gz", hash = "sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81", size = 34031, upload-time = "2024-12-04T17:35:28.174Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl", hash = "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274", size = 11050, upload-time = "2024-12-04T17:35:26.475Z" },
+]
+
+[[package]]
+name = "sotto"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "huggingface-hub" },
+    { name = "mlx-lm" },
+    { name = "mlx-whisper" },
+    { name = "numpy" },
+    { name = "pynput" },
+    { name = "pyobjc-framework-cocoa" },
+    { name = "pyobjc-framework-libdispatch" },
+    { name = "pyobjc-framework-quartz" },
+    { name = "rumps" },
+    { name = "sounddevice" },
+    { name = "tomli-w" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "huggingface-hub" },
+    { name = "mlx-lm", specifier = ">=0.31.3,<0.32" },
+    { name = "mlx-whisper", specifier = ">=0.4.3" },
+    { name = "numpy" },
+    { name = "pynput", specifier = ">=1.8.2" },
+    { name = "pyobjc-framework-cocoa", specifier = ">=10.0" },
+    { name = "pyobjc-framework-libdispatch", specifier = ">=10.0" },
+    { name = "pyobjc-framework-quartz", specifier = ">=10.0" },
+    { name = "rumps", specifier = ">=0.4.0" },
+    { name = "sounddevice", specifier = ">=0.5.5" },
+    { name = "tomli-w" },
 ]
 
 [[package]]

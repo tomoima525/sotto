@@ -1,4 +1,6 @@
-# Local Dictation
+# Sotto
+
+> *sotto voce* — in a quiet voice · **そっと** — softly, unobtrusively
 
 Fully-local dictation for macOS (Apple Silicon). Hold a hotkey, speak in English or Japanese, release — your words are transcribed with Whisper, lightly cleaned up by a small local LLM (punctuation, filler-word removal), and pasted at the cursor of whatever app you're in.
 
@@ -15,7 +17,7 @@ Requires [uv](https://docs.astral.sh/uv/) and an Apple Silicon Mac.
 
 ```sh
 uv sync
-uv run local-dictation download   # one-time, ~4 GB into the HuggingFace cache
+uv run sotto download   # one-time, ~4 GB into the HuggingFace cache
 ```
 
 ### macOS permissions
@@ -33,7 +35,7 @@ Microphone prompts automatically on first recording. The other two usually need 
 Run the permission doctor to check:
 
 ```sh
-uv run local-dictation hotkey-test
+uv run sotto hotkey-test
 ```
 
 It prints Accessibility status and `DOWN`/`UP` when you press the hotkey; silence on keypress means Input Monitoring is missing.
@@ -41,25 +43,25 @@ It prints Accessibility status and `DOWN`/`UP` when you press the hotkey; silenc
 ## Usage
 
 ```sh
-uv run local-dictation run        # menu bar app
+uv run sotto run        # menu bar app
 ```
 
 Hold **Right Option (⌥)**, speak, release. The cleaned text is pasted into the focused text field and your previous clipboard is restored.
 
 Menu bar: 🎤 idle · 🔴 recording · ✍️ processing. The menu lets you toggle LLM cleanup, set the language (**Universal** auto-detects from the audio; force **English** or **Japanese** for short utterances that auto-detect gets wrong), pick the microphone (the **Microphone** submenu shows which device is in use — virtual devices from Loom/Zoom/etc. can silently become the system default), change the hotkey (Right Option / Right Command / F13), and switch Whisper models.
 
-Config lives at `~/Library/Application Support/local-dictation/config.toml`.
+Config lives at `~/Library/Application Support/sotto/config.toml`.
 
 ### Testing each stage
 
 ```sh
-uv run local-dictation devices                # list input devices, show selected
-uv run local-dictation record --seconds 3     # mic level check
-uv run local-dictation transcribe --seconds 5 # record + Whisper
-uv run local-dictation transcribe --language ja  # force Japanese (auto/en/ja)
-uv run local-dictation clean "um so I think uh we should ship it"
-uv run local-dictation inject "テスト ✅" --delay 3  # focus a text field within 3s
-uv run local-dictation run --no-menubar       # full pipeline, headless with logs
+uv run sotto devices                # list input devices, show selected
+uv run sotto record --seconds 3     # mic level check
+uv run sotto transcribe --seconds 5 # record + Whisper
+uv run sotto transcribe --language ja  # force Japanese (auto/en/ja)
+uv run sotto clean "um so I think uh we should ship it"
+uv run sotto inject "テスト ✅" --delay 3  # focus a text field within 3s
+uv run sotto run --no-menubar       # full pipeline, headless with logs
 ```
 
 ## Limitations

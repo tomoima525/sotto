@@ -1,5 +1,5 @@
 [project]
-name = "local-dictation"
+name = "sotto"
 version = "0.1.0"
 description = "Fully-local dictation for macOS: hold a hotkey, speak, get cleaned text at your cursor"
 readme = "README.md"
@@ -22,11 +22,11 @@ dependencies = [
 ]
 
 [project.scripts]
-local-dictation = "local_dictation.cli:main"
+sotto = "sotto.cli:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/local_dictation"]
+packages = ["src/sotto"]
