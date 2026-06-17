@@ -1,6 +1,6 @@
 """Dictation pipeline: state machine + worker thread.
 
-Hotkey callbacks must return immediately (they run on pynput's thread), so
+Hotkey callbacks must return immediately (they run on the poller thread), so
 they only flip state and enqueue commands. All inference and pasteboard work
 happens on the single worker thread, which also serializes overlapping
 dictations (release-while-processing, rapid double-taps).

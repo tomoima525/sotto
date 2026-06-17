@@ -127,18 +127,23 @@ def cmd_inject(args, config: Config) -> None:
 
 
 def cmd_hotkey_test(args, config: Config) -> None:
+    import Quartz
+
     from .hotkey import HotkeyListener
     from .injector import accessibility_trusted
 
     print(f"Accessibility trusted: {accessibility_trusted()}")
     print(
         f"Watching hotkey {config.hotkey!r}. Hold and release it; Ctrl+C to exit.\n"
-        "If nothing prints when you press it, grant your terminal Input Monitoring\n"
-        "in System Settings > Privacy & Security, then restart the terminal."
+        "Prints DOWN/UP on detection, plus the raw modifier-flags word so you\n"
+        "can see which bits your keyboard sets. If nothing changes when you\n"
+        "press it, grant your terminal Input Monitoring in System Settings >\n"
+        "Privacy & Security, then restart the terminal."
     )
+    src = Quartz.kCGEventSourceStateHIDSystemState
     listener = HotkeyListener(
         config.hotkey,
-        on_hold_start=lambda: print("DOWN"),
+        on_hold_start=lambda: print(f"DOWN   flags=0x{int(Quartz.CGEventSourceFlagsState(src)):08X}"),
         on_hold_end=lambda: print("UP"),
     )
     listener.start()
