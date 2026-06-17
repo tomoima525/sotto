@@ -14,8 +14,10 @@ from .config import Config, LANGUAGE_CHOICES
 
 
 def _setup_logging(debug: bool) -> None:
+    # Without --debug, stay quiet: the menu bar already shows state, so only
+    # surface warnings/errors. --debug brings back the full INFO/DEBUG stream.
     logging.basicConfig(
-        level=logging.DEBUG if debug else logging.INFO,
+        level=logging.DEBUG if debug else logging.WARNING,
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
         stream=sys.stderr,
     )
