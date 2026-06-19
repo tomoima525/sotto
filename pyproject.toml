@@ -11,7 +11,6 @@ dependencies = [
     "mlx-whisper>=0.4.3",
     "mlx-lm>=0.31.3,<0.32",
     "rumps>=0.4.0",
-    "pynput>=1.8.2",
     "sounddevice>=0.5.5",
     "numpy",
     "huggingface-hub",
@@ -19,6 +18,7 @@ dependencies = [
     "pyobjc-framework-Cocoa>=10.0",
     "pyobjc-framework-Quartz>=10.0",
     "pyobjc-framework-libdispatch>=10.0",
+    "pyobjc-framework-applicationservices>=10.0",
 ]
 
 [project.scripts]
