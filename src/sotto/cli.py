@@ -143,8 +143,8 @@ def cmd_hotkey_test(args, config: Config) -> None:
     src = Quartz.kCGEventSourceStateHIDSystemState
     listener = HotkeyListener(
         config.hotkey,
-        on_hold_start=lambda: print(f"DOWN   flags=0x{int(Quartz.CGEventSourceFlagsState(src)):08X}"),
-        on_hold_end=lambda: print("UP"),
+        on_press=lambda: print(f"DOWN   flags=0x{int(Quartz.CGEventSourceFlagsState(src)):08X}"),
+        on_release=lambda: print("UP"),
     )
     listener.start()
     try:
@@ -160,19 +160,16 @@ def cmd_run(args, config: Config) -> None:
         # settings via the menu.
         config.language = args.language
     if args.no_menubar:
-        from .hotkey import HotkeyListener
+        from .hotkey import make_listener
         from .pipeline import Pipeline
 
         pipeline = Pipeline(config)
         pipeline.start()
-        listener = HotkeyListener(
-            config.hotkey,
-            on_hold_start=pipeline.begin_recording,
-            on_hold_end=pipeline.end_recording,
-        )
+        listener = make_listener(config.hotkey, config.input_mode, pipeline)
         listener.start()
+        verb = "press" if config.input_mode == "toggle" else "hold"
         print(
-            f"Loading models, then hold {config.hotkey!r} to dictate. Ctrl+C to exit."
+            f"Loading models, then {verb} {config.hotkey!r} to dictate. Ctrl+C to exit."
         )
         try:
             while True:

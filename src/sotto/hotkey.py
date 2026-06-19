@@ -54,17 +54,22 @@ def key_is_down(kind: str, value: int) -> bool:
 
 
 class HotkeyListener:
+    """Watches one key and reports its press/release edges.
+
+    on_release may be None (e.g. toggle mode only acts on the press edge).
+    """
+
     def __init__(
         self,
         key_name: str,
-        on_hold_start: Callable[[], None],
-        on_hold_end: Callable[[], None],
+        on_press: Callable[[], None],
+        on_release: Callable[[], None] | None = None,
     ) -> None:
         if key_name not in KEY_MAP:
             raise ValueError(f"Unknown hotkey {key_name!r}; choose from {list(KEY_MAP)}")
         self._kind, self._value = KEY_MAP[key_name]
-        self._on_hold_start = on_hold_start
-        self._on_hold_end = on_hold_end
+        self._on_press = on_press
+        self._on_release = on_release
         self._held = False
         self._running = False
         self._thread: threading.Thread | None = None
@@ -88,15 +93,32 @@ class HotkeyListener:
             down = key_is_down(self._kind, self._value)
             if down and not self._held:
                 self._held = True
-                self._fire(self._on_hold_start)
+                self._fire(self._on_press)
             elif not down and self._held:
                 self._held = False
-                self._fire(self._on_hold_end)
+                self._fire(self._on_release)
             time.sleep(POLL_INTERVAL_S)
 
     @staticmethod
-    def _fire(callback: Callable[[], None]) -> None:
+    def _fire(callback: Callable[[], None] | None) -> None:
+        if callback is None:
+            return
         try:
             callback()
         except Exception:
             log.exception("Hotkey callback failed")
+
+
+def make_listener(key_name: str, input_mode: str, pipeline) -> HotkeyListener:
+    """Wire a HotkeyListener to a pipeline according to the input mode.
+
+    hold:   press starts recording, release stops it.
+    toggle: each press flips recording on/off; release is ignored.
+    """
+    if input_mode == "toggle":
+        return HotkeyListener(key_name, on_press=pipeline.toggle_recording)
+    return HotkeyListener(
+        key_name,
+        on_press=pipeline.begin_recording,
+        on_release=pipeline.end_recording,
+    )

@@ -9,8 +9,14 @@ import rumps
 from libdispatch import dispatch_async, dispatch_get_main_queue
 
 from . import models
-from .config import Config, HOTKEY_CHOICES, LANGUAGE_CHOICES, WHISPER_MODEL_CHOICES
-from .hotkey import HotkeyListener
+from .config import (
+    Config,
+    HOTKEY_CHOICES,
+    INPUT_MODE_CHOICES,
+    LANGUAGE_CHOICES,
+    WHISPER_MODEL_CHOICES,
+)
+from .hotkey import make_listener
 from .pipeline import Pipeline, State
 from .recorder import DEFAULT_DEVICE, default_input_device, list_input_devices
 
@@ -63,11 +69,19 @@ class DictationApp(rumps.App):
             item.state = code == self.config.language
             language_menu.add(item)
 
+        input_mode_menu = rumps.MenuItem("Input Mode")
+        for mode, label in INPUT_MODE_CHOICES.items():
+            item = rumps.MenuItem(label, callback=self._pick_input_mode)
+            item._input_mode = mode
+            item.state = mode == self.config.input_mode
+            input_mode_menu.add(item)
+
         self.mic_menu = rumps.MenuItem("Microphone")
         self._populate_mic_menu()
 
         self.menu = [
             self.cleanup_item,
+            input_mode_menu,
             language_menu,
             self.mic_menu,
             hotkey_menu,
@@ -77,10 +91,8 @@ class DictationApp(rumps.App):
         ]
 
         self.pipeline = Pipeline(self.config, on_state_change=self._state_changed)
-        self.hotkey = HotkeyListener(
-            self.config.hotkey,
-            on_hold_start=self.pipeline.begin_recording,
-            on_hold_end=self.pipeline.end_recording,
+        self.hotkey = make_listener(
+            self.config.hotkey, self.config.input_mode, self.pipeline
         )
 
         self._ensure_models_then_start()
@@ -166,6 +178,13 @@ class DictationApp(rumps.App):
         self.config.cleanup_enabled = bool(sender.state)
         self.config.save()
 
+    def _restart_listener(self) -> None:
+        self.hotkey.stop()
+        self.hotkey = make_listener(
+            self.config.hotkey, self.config.input_mode, self.pipeline
+        )
+        self.hotkey.start()
+
     def _pick_hotkey(self, sender) -> None:
         name = sender._hotkey_name
         if name == self.config.hotkey:
@@ -174,13 +193,18 @@ class DictationApp(rumps.App):
             item.state = item._hotkey_name == name
         self.config.hotkey = name
         self.config.save()
-        self.hotkey.stop()
-        self.hotkey = HotkeyListener(
-            name,
-            on_hold_start=self.pipeline.begin_recording,
-            on_hold_end=self.pipeline.end_recording,
-        )
-        self.hotkey.start()
+        self._restart_listener()
+
+    def _pick_input_mode(self, sender) -> None:
+        mode = sender._input_mode
+        if mode == self.config.input_mode:
+            return
+        for item in self.menu["Input Mode"].values():
+            item.state = item._input_mode == mode
+        self.config.input_mode = mode
+        self.config.save()
+        self._restart_listener()
+        log.info("Input mode set to %r", mode)
 
     def _pick_model(self, sender) -> None:
         repo = sender._model_repo
