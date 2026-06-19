@@ -46,9 +46,9 @@ It prints Accessibility status and `DOWN`/`UP` when you press the hotkey; silenc
 uv run sotto run        # menu bar app
 ```
 
-Hold **Right Option (⌥)**, speak, release. The cleaned text is pasted into the focused text field and your previous clipboard is restored.
+Hold **Right Option (⌥)**, speak, release. The cleaned text is pasted into the focused text field and your previous clipboard is restored. (Prefer not to hold the key? Switch **Input Mode** to **Toggle** and press once to start, again to stop.)
 
-Menu bar: 🎤 idle · 🔴 recording · ✍️ processing. The menu lets you toggle LLM cleanup, set the language (**Universal** auto-detects from the audio; force **English** or **Japanese** for short utterances that auto-detect gets wrong), pick the microphone (the **Microphone** submenu shows which device is in use — virtual devices from Loom/Zoom/etc. can silently become the system default), change the hotkey (Right Option / Right Command / F13), and switch Whisper models.
+Menu bar: 🎤 idle · 🔴 recording · ✍️ processing. The menu lets you toggle LLM cleanup, choose the input mode (**Hold to talk** or **Toggle** — press to start/stop), set the language (**Universal** auto-detects from the audio; force **English** or **Japanese** for short utterances that auto-detect gets wrong), pick the microphone (the **Microphone** submenu shows which device is in use — virtual devices from Loom/Zoom/etc. can silently become the system default), change the hotkey (Right Option / Right Command / F13), and switch Whisper models.
 
 Config lives at `~/Library/Application Support/sotto/config.toml`.
 

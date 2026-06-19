@@ -41,6 +41,12 @@ WHISPER_MODEL_CHOICES = [
 
 HOTKEY_CHOICES = ["alt_r", "cmd_r", "f13"]
 
+# value stored in config -> menu label
+INPUT_MODE_CHOICES = {
+    "hold": "Hold to talk",
+    "toggle": "Toggle (press to start / stop)",
+}
+
 # value stored in config -> menu label ("auto" lets Whisper detect from audio)
 LANGUAGE_CHOICES = {
     "auto": "Universal (detect from audio)",
@@ -57,6 +63,7 @@ class Config:
     cleanup_enabled: bool = True
     language: str = "auto"  # "auto" | whisper language code ("en", "ja", ...)
     input_device: str = "default"  # device name, or "default" for system default
+    input_mode: str = "hold"  # "hold" | "toggle"
 
     @classmethod
     def load(cls) -> "Config":

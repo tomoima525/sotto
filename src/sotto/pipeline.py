@@ -61,6 +61,10 @@ class Pipeline:
     def end_recording(self) -> None:
         self._commands.put("stop")
 
+    def toggle_recording(self) -> None:
+        """Start if idle, stop if recording (for toggle input mode)."""
+        self._commands.put("toggle")
+
     # -- worker thread --
 
     def _set_state(self, state: State) -> None:
@@ -86,14 +90,29 @@ class Pipeline:
                 if self.recorder.recording:
                     self.recorder.stop()
                 return
-            if cmd == "start" and self.state == State.IDLE:
-                self._set_state(State.RECORDING)
-                self.recorder.start()
-            elif cmd == "stop" and self.state == State.RECORDING:
-                audio = self.recorder.stop()
-                self._set_state(State.PROCESSING)
-                self._process(audio)
-                self._set_state(State.IDLE)
+            if cmd == "start":
+                self._start_recording()
+            elif cmd == "stop":
+                self._stop_and_process()
+            elif cmd == "toggle":
+                if self.state == State.IDLE:
+                    self._start_recording()
+                elif self.state == State.RECORDING:
+                    self._stop_and_process()
+
+    def _start_recording(self) -> None:
+        if self.state != State.IDLE:
+            return
+        self._set_state(State.RECORDING)
+        self.recorder.start()
+
+    def _stop_and_process(self) -> None:
+        if self.state != State.RECORDING:
+            return
+        audio = self.recorder.stop()
+        self._set_state(State.PROCESSING)
+        self._process(audio)
+        self._set_state(State.IDLE)
 
     def _process(self, audio) -> None:
         try:
