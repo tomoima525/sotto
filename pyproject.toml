@@ -1,12 +1,20 @@
 [project]
 name = "sotto"
-version = "0.1.0"
+version = "1.0.2"
 description = "Fully-local dictation for macOS: hold a hotkey, speak, get cleaned text at your cursor"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "Tomoaki Imai", email = "tomoima525@gmail.com" }
 ]
 requires-python = ">=3.12"
+classifiers = [
+    "Environment :: MacOS X",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS :: MacOS X",
+    "Programming Language :: Python :: 3.12",
+]
 dependencies = [
     "mlx-whisper>=0.4.3",
     "mlx-lm>=0.31.3,<0.32",
@@ -20,6 +28,11 @@ dependencies = [
     "pyobjc-framework-libdispatch>=10.0",
     "pyobjc-framework-applicationservices>=10.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/tomoima525/sotto"
+Repository = "https://github.com/tomoima525/sotto"
+Issues = "https://github.com/tomoima525/sotto/issues"
 
 [project.scripts]
 sotto = "sotto.cli:main"
