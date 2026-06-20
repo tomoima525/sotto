@@ -4,6 +4,7 @@ updates coming from worker threads are dispatched onto the main queue."""
 from __future__ import annotations
 
 import logging
+from collections import deque
 
 import rumps
 from libdispatch import dispatch_async, dispatch_get_main_queue
@@ -28,6 +29,24 @@ STATE_TITLES = {
     State.RECORDING: "🔴",
     State.PROCESSING: "✍️",
 }
+
+# Live recording meter: a scrolling waveform driven by the mic level. Block
+# glyphs share an advance width, so the status item width stays fixed (no
+# jitter). The lowest glyph is the resting baseline — a flat line while you
+# speak means the mic isn't being picked up.
+WAVE_BARS = "▁▂▃▄▅▆▇█"
+WAVE_WIDTH = 7
+WAVE_INTERVAL_S = 0.07  # ~14 Hz
+# RMS range mapped onto the bars. Below the floor (room tone / a mic that isn't
+# being heard) rests at ▁; normal speech lands mid-range, loud speech tops out.
+WAVE_FLOOR = 0.004
+WAVE_CEIL = 0.18
+
+
+def level_to_bar(level: float) -> str:
+    span = max(0.0, level - WAVE_FLOOR) / (WAVE_CEIL - WAVE_FLOOR)
+    norm = min(1.0, span) ** 0.5  # sqrt curve so quiet speech still registers
+    return WAVE_BARS[round(norm * (len(WAVE_BARS) - 1))]
 
 HOTKEY_LABELS = {
     "alt_r": "Right Option (⌥)",
@@ -95,6 +114,9 @@ class DictationApp(rumps.App):
             self.config.hotkey, self.config.input_mode, self.pipeline
         )
 
+        self._wave: deque[str] = deque(maxlen=WAVE_WIDTH)
+        self._meter_timer = rumps.Timer(self._animate_meter, WAVE_INTERVAL_S)
+
         self._ensure_models_then_start()
 
     def _ensure_models_then_start(self) -> None:
@@ -122,7 +144,30 @@ class DictationApp(rumps.App):
         dispatch_async(dispatch_get_main_queue(), update)
 
     def _state_changed(self, state: State) -> None:
-        self._set_title(STATE_TITLES.get(state, "🎤"))
+        # Timer start/stop and title writes must happen on the main thread.
+        def update():
+            if state == State.RECORDING:
+                self._start_meter()
+            else:
+                self._stop_meter()
+                self.title = STATE_TITLES.get(state, "🎤")
+
+        dispatch_async(dispatch_get_main_queue(), update)
+
+    def _start_meter(self) -> None:
+        self._wave.clear()
+        self._wave.extend(WAVE_BARS[0] * WAVE_WIDTH)  # flat resting baseline
+        self.title = "".join(self._wave)
+        if not self._meter_timer.is_alive():
+            self._meter_timer.start()
+
+    def _stop_meter(self) -> None:
+        if self._meter_timer.is_alive():
+            self._meter_timer.stop()
+
+    def _animate_meter(self, _timer) -> None:
+        self._wave.append(level_to_bar(self.pipeline.recorder.current_level()))
+        self.title = "".join(self._wave)
 
     def _pick_language(self, sender) -> None:
         code = sender._language_code
@@ -219,6 +264,7 @@ class DictationApp(rumps.App):
         )
 
     def _quit(self, sender) -> None:
+        self._stop_meter()
         self.hotkey.stop()
         self.pipeline.shutdown()
         rumps.quit_application()

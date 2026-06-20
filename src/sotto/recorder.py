@@ -52,16 +52,25 @@ class Recorder:
         self._chunks: list[np.ndarray] = []
         self._stream: sd.InputStream | None = None
         self._lock = threading.Lock()
+        # Smoothed input level (0..~1) for the menu-bar meter. Written on the
+        # PortAudio callback thread, read on the main thread — a lone float, so
+        # the GIL makes that safe without a lock.
+        self._level = 0.0
 
     @property
     def recording(self) -> bool:
         return self._stream is not None
+
+    def current_level(self) -> float:
+        """Most recent smoothed input level (RMS). 0 when not recording."""
+        return self._level
 
     def start(self) -> None:
         with self._lock:
             if self._stream is not None:
                 return
             self._chunks = []
+            self._level = 0.0
             self._stream = sd.InputStream(
                 samplerate=SAMPLE_RATE,
                 channels=1,
@@ -76,6 +85,9 @@ class Recorder:
         if status:
             log.debug("Audio stream status: %s", status)
         self._chunks.append(indata[:, 0].copy())
+        rms = float(np.sqrt(np.mean(indata[:, 0] ** 2)))
+        # Fast attack, slow decay so the meter jumps to speech and eases back.
+        self._level = rms if rms > self._level else self._level * 0.85 + rms * 0.15
 
     def stop(self) -> np.ndarray:
         """Stop recording and return the captured audio as a 1-D float32 array."""
@@ -84,6 +96,7 @@ class Recorder:
         if stream is not None:
             stream.stop()
             stream.close()
+        self._level = 0.0
         audio = (
             np.concatenate(self._chunks)
             if self._chunks
