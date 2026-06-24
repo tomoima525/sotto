@@ -1,6 +1,6 @@
 # Sotto
 
-> *sotto voce* — in a quiet voice · **そっと** — softly, unobtrusively
+> _sotto voce_ — in a quiet voice · **そっと** — softly, unobtrusively
 
 Fully-local dictation for macOS (Apple Silicon). Hold a hotkey, speak in English or Japanese, release — your words are transcribed with Whisper, lightly cleaned up by a small local LLM (punctuation, filler-word removal), and pasted at the cursor of whatever app you're in.
 
@@ -13,6 +13,18 @@ Everything runs on-device via [MLX](https://github.com/ml-explore/mlx). No audio
 
 ## Setup
 
+### From HomeBrew
+
+```
+brew install tomoima525/sotto/sotto
+sotto download   # one-time model fetch (~4 GB)
+sotto run        # menu bar app
+```
+
+Tap repo: https://github.com/tomoima525/homebrew-sotto
+
+### From source
+
 Requires [uv](https://docs.astral.sh/uv/) and an Apple Silicon Mac.
 
 ```sh
@@ -24,11 +36,11 @@ uv run sotto download   # one-time, ~4 GB into the HuggingFace cache
 
 macOS attributes permissions to the **app you launch from** — during development that's your terminal (Terminal.app, iTerm2, Ghostty, ...). Grant your terminal all three in **System Settings → Privacy & Security**:
 
-| Permission | Used for | Symptom if missing |
-|---|---|---|
-| **Microphone** | recording your voice | recordings are silent (rms ≈ 0) |
-| **Input Monitoring** | the global hold-to-talk hotkey | hotkey silently does nothing |
-| **Accessibility** | simulated ⌘V to paste at the cursor | text never appears |
+| Permission           | Used for                            | Symptom if missing              |
+| -------------------- | ----------------------------------- | ------------------------------- |
+| **Microphone**       | recording your voice                | recordings are silent (rms ≈ 0) |
+| **Input Monitoring** | the global hold-to-talk hotkey      | hotkey silently does nothing    |
+| **Accessibility**    | simulated ⌘V to paste at the cursor | text never appears              |
 
 Microphone prompts automatically on first recording. The other two usually need to be added manually (+ button → select your terminal app). **Restart the terminal after granting.** If you switch terminal apps, re-grant.
 
