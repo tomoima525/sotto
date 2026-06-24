@@ -187,6 +187,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         prog="sotto", description="Sotto — fully-local dictation for macOS"
     )
+    from . import __version__
+
+    parser.add_argument("--version", action="version", version=f"sotto {__version__}")
     parser.add_argument("--debug", action="store_true", help="verbose logging")
     sub = parser.add_subparsers(dest="command")
 
