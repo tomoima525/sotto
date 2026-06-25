@@ -60,7 +60,13 @@ uv run sotto run        # menu bar app
 
 Hold **Right Option (⌥)**, speak, release. The cleaned text is pasted into the focused text field and your previous clipboard is restored. (Prefer not to hold the key? Switch **Input Mode** to **Toggle** and press once to start, again to stop.)
 
-Menu bar: 🎤 idle · live waveform while recording · ✍️ processing. The recording waveform is driven by your mic level, so a flat line while you speak means the wrong input device is selected. The menu lets you toggle LLM cleanup, choose the input mode (**Hold to talk** or **Toggle** — press to start/stop), set the language (**Universal** auto-detects from the audio; force **English** or **Japanese** for short utterances that auto-detect gets wrong), pick the microphone (the **Microphone** submenu shows which device is in use — virtual devices from Loom/Zoom/etc. can silently become the system default), change the hotkey (Right Option / Right Command / F13), and switch Whisper models.
+### Input modes
+
+- **Hold to talk** — hold the hotkey while speaking, release to transcribe.
+- **Toggle** — press once to start, again to stop.
+- **Streaming (live preview)** — press once to start; a floating overlay shows your words **as you speak**, transcribed phrase-by-phrase by a small fast Whisper model. Press again to stop; the full transcript is cleaned up by the LLM and pasted once into the focused app. The overlay never steals focus. Streaming uses a separate, smaller model (pick it under **Streaming Model** — `small`/`base`/`tiny`) for low latency; accuracy is lower than the default turbo model, so it's an experiment — the final LLM cleanup compensates somewhat.
+
+Menu bar: 🎤 idle · live waveform while recording · ✍️ processing · 🟢 streaming. The recording waveform is driven by your mic level, so a flat line while you speak means the wrong input device is selected. The menu lets you toggle LLM cleanup, choose the input mode, set the language (**Universal** auto-detects from the audio; force **English** or **Japanese** for short utterances that auto-detect gets wrong), pick the microphone (the **Microphone** submenu shows which device is in use — virtual devices from Loom/Zoom/etc. can silently become the system default), change the hotkey (Right Option / Right Command / F13), and switch the Whisper / Streaming models.
 
 Config lives at `~/Library/Application Support/sotto/config.toml`.
 
@@ -71,6 +77,8 @@ uv run sotto devices                # list input devices, show selected
 uv run sotto record --seconds 3     # mic level check
 uv run sotto transcribe --seconds 5 # record + Whisper
 uv run sotto transcribe --language ja  # force Japanese (auto/en/ja)
+uv run sotto stream --seconds 15    # streaming: live segments + final cleaned text
+uv run sotto stream --model mlx-community/whisper-tiny-mlx  # try a faster model
 uv run sotto clean "um so I think uh we should ship it"
 uv run sotto inject "テスト ✅" --delay 3  # focus a text field within 3s
 uv run sotto run --no-menubar       # full pipeline, headless with logs

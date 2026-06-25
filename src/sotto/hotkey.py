@@ -115,6 +115,8 @@ def make_listener(key_name: str, input_mode: str, pipeline) -> HotkeyListener:
     hold:   press starts recording, release stops it.
     toggle: each press flips recording on/off; release is ignored.
     """
+    if input_mode == "streaming":
+        return HotkeyListener(key_name, on_press=pipeline.toggle_streaming)
     if input_mode == "toggle":
         return HotkeyListener(key_name, on_press=pipeline.toggle_recording)
     return HotkeyListener(
