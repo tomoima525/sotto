@@ -32,11 +32,21 @@ def _migrate_legacy_config() -> None:
 
 DEFAULT_WHISPER_MODEL = "mlx-community/whisper-large-v3-turbo"
 DEFAULT_LLM_MODEL = "mlx-community/Qwen3.5-4B-4bit"
+# Small, fast, multilingual model for streaming mode (much cheaper per call than
+# turbo — preview lag drops to ~1-2s, at the cost of accuracy).
+DEFAULT_STREAMING_WHISPER_MODEL = "mlx-community/whisper-small-mlx"
 
 WHISPER_MODEL_CHOICES = [
     "mlx-community/whisper-large-v3-turbo",
     "mlx-community/whisper-large-v3-turbo-4bit",
     "mlx-community/whisper-large-v3-mlx",
+]
+
+# Small multilingual models to experiment with for streaming.
+STREAMING_WHISPER_MODEL_CHOICES = [
+    "mlx-community/whisper-small-mlx",
+    "mlx-community/whisper-base-mlx",
+    "mlx-community/whisper-tiny-mlx",
 ]
 
 HOTKEY_CHOICES = ["alt_r", "cmd_r", "f13"]
@@ -45,6 +55,7 @@ HOTKEY_CHOICES = ["alt_r", "cmd_r", "f13"]
 INPUT_MODE_CHOICES = {
     "hold": "Hold to talk",
     "toggle": "Toggle (press to start / stop)",
+    "streaming": "Streaming (live preview)",
 }
 
 # value stored in config -> menu label ("auto" lets Whisper detect from audio)
@@ -63,7 +74,10 @@ class Config:
     cleanup_enabled: bool = True
     language: str = "auto"  # "auto" | whisper language code ("en", "ja", ...)
     input_device: str = "default"  # device name, or "default" for system default
-    input_mode: str = "hold"  # "hold" | "toggle"
+    input_mode: str = "hold"  # "hold" | "toggle" | "streaming"
+    streaming_whisper_model: str = DEFAULT_STREAMING_WHISPER_MODEL
+    streaming_silence_ms: int = 700  # trailing pause that ends a phrase
+    streaming_max_segment_s: float = 12.0  # hard cut for a long monologue
 
     @classmethod
     def load(cls) -> "Config":

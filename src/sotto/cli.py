@@ -104,6 +104,67 @@ def cmd_transcribe(args, config: Config) -> None:
     print(f"({time.monotonic() - t0:.1f}s) Transcript: {text!r}")
 
 
+def cmd_stream(args, config: Config) -> None:
+    """Headless streaming test: speak for N seconds, print live segments and
+    the final cleaned text. Validates VAD + small-model latency without the GUI."""
+    import numpy as np
+
+    from .recorder import SAMPLE_RATE, Recorder
+    from .transcriber import Transcriber
+    from .vad import EnergyVADSegmenter
+
+    lang = args.language or config.language
+    model = args.model or config.streaming_whisper_model
+    print(f"Streaming model: {model}  (language={lang})")
+    transcriber = Transcriber(model, lang)
+    print("Warming up streaming model...")
+    transcriber.warmup()
+
+    vad = EnergyVADSegmenter(
+        min_silence_s=config.streaming_silence_ms / 1000,
+        max_segment_s=config.streaming_max_segment_s,
+    )
+    recorder = Recorder(device_name=config.input_device)
+    parts: list[str] = []
+
+    def handle(seg):
+        t0 = time.monotonic()
+        text = transcriber.transcribe(seg)
+        dt = time.monotonic() - t0
+        if text:
+            parts.append(text)
+            print(f"  [seg {len(seg)/SAMPLE_RATE:.1f}s -> {dt:.1f}s] {text!r}")
+
+    print(f"Speak now for {args.seconds:.0f}s (pause between phrases)...")
+    recorder.start()
+    deadline = time.monotonic() + args.seconds
+    while time.monotonic() < deadline:
+        audio = recorder.drain_chunks()
+        if audio is not None:
+            for seg in vad.feed(audio):
+                handle(seg)
+        time.sleep(0.25)
+    tail = recorder.drain_chunks()
+    if tail is not None:
+        for seg in vad.feed(tail):
+            handle(seg)
+    final = vad.flush()
+    if final is not None:
+        handle(final)
+    recorder.stop()
+
+    sep = "" if lang == "ja" else " "
+    full = sep.join(parts).strip()
+    print(f"\nRaw transcript: {full!r}")
+    if full and not args.no_cleanup:
+        from .cleaner import Cleaner
+
+        cleaner = Cleaner(config.llm_model)
+        cleaner.warmup()
+        t0 = time.monotonic()
+        print(f"Cleaned ({time.monotonic()-t0:.1f}s): {cleaner.clean(full)!r}")
+
+
 def cmd_clean(args, config: Config) -> None:
     from .cleaner import Cleaner
 
@@ -208,6 +269,16 @@ def main() -> None:
         help="transcription language (default: config value; auto = detect from audio)",
     )
 
+    p = sub.add_parser("stream", help="test streaming dictation headlessly")
+    p.add_argument("--seconds", type=float, default=15)
+    p.add_argument(
+        "--language",
+        choices=list(LANGUAGE_CHOICES),
+        help="transcription language (default: config value)",
+    )
+    p.add_argument("--model", help="streaming whisper repo (default: config value)")
+    p.add_argument("--no-cleanup", action="store_true", help="skip the LLM cleanup pass")
+
     p = sub.add_parser("clean", help="run LLM cleanup on a string")
     p.add_argument("text")
 
@@ -235,6 +306,7 @@ def main() -> None:
         "devices": cmd_devices,
         "record": cmd_record,
         "transcribe": cmd_transcribe,
+        "stream": cmd_stream,
         "clean": cmd_clean,
         "inject": cmd_inject,
         "hotkey-test": cmd_hotkey_test,

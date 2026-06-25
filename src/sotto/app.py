@@ -15,9 +15,11 @@ from .config import (
     HOTKEY_CHOICES,
     INPUT_MODE_CHOICES,
     LANGUAGE_CHOICES,
+    STREAMING_WHISPER_MODEL_CHOICES,
     WHISPER_MODEL_CHOICES,
 )
 from .hotkey import make_listener
+from .hud import HUDController
 from .pipeline import Pipeline, State
 from .recorder import DEFAULT_DEVICE, default_input_device, list_input_devices
 
@@ -28,6 +30,7 @@ STATE_TITLES = {
     State.IDLE: "🎤",
     State.RECORDING: "🔴",
     State.PROCESSING: "✍️",
+    State.STREAMING: "🟢",
 }
 
 # Live recording meter: a scrolling waveform driven by the mic level. Block
@@ -81,6 +84,13 @@ class DictationApp(rumps.App):
             item.state = repo == self.config.whisper_model
             model_menu.add(item)
 
+        stream_model_menu = rumps.MenuItem("Streaming Model")
+        for repo in STREAMING_WHISPER_MODEL_CHOICES:
+            item = rumps.MenuItem(repo.split("/")[-1], callback=self._pick_stream_model)
+            item._model_repo = repo
+            item.state = repo == self.config.streaming_whisper_model
+            stream_model_menu.add(item)
+
         language_menu = rumps.MenuItem("Language")
         for code, label in LANGUAGE_CHOICES.items():
             item = rumps.MenuItem(label, callback=self._pick_language)
@@ -105,11 +115,17 @@ class DictationApp(rumps.App):
             self.mic_menu,
             hotkey_menu,
             model_menu,
+            stream_model_menu,
             None,
             rumps.MenuItem("Quit", callback=self._quit),
         ]
 
-        self.pipeline = Pipeline(self.config, on_state_change=self._state_changed)
+        self.hud = HUDController()
+        self.pipeline = Pipeline(
+            self.config,
+            on_state_change=self._state_changed,
+            on_partial=self._on_partial,
+        )
         self.hotkey = make_listener(
             self.config.hotkey, self.config.input_mode, self.pipeline
         )
@@ -146,13 +162,23 @@ class DictationApp(rumps.App):
     def _state_changed(self, state: State) -> None:
         # Timer start/stop and title writes must happen on the main thread.
         def update():
-            if state == State.RECORDING:
+            if state in (State.RECORDING, State.STREAMING):
                 self._start_meter()
             else:
                 self._stop_meter()
                 self.title = STATE_TITLES.get(state, "🎤")
 
         dispatch_async(dispatch_get_main_queue(), update)
+
+    def _on_partial(self, kind: str, text: str) -> None:
+        # Streaming preview events from the pipeline. HUDController hops to the
+        # main thread itself, so we can call it directly.
+        if kind == "start":
+            self.hud.show()
+        elif kind in ("append", "commit"):
+            self.hud.set_text(text)
+        elif kind == "end":
+            self.hud.hide()
 
     def _start_meter(self) -> None:
         self._wave.clear()
@@ -263,8 +289,21 @@ class DictationApp(rumps.App):
             "Sotto", "", "Whisper model changed — restart the app to apply."
         )
 
+    def _pick_stream_model(self, sender) -> None:
+        repo = sender._model_repo
+        if repo == self.config.streaming_whisper_model:
+            return
+        for item in self.menu["Streaming Model"].values():
+            item.state = item._model_repo == repo
+        self.config.streaming_whisper_model = repo
+        self.config.save()
+        rumps.notification(
+            "Sotto", "", "Streaming model changed — restart the app to apply."
+        )
+
     def _quit(self, sender) -> None:
         self._stop_meter()
+        self.hud.teardown()
         self.hotkey.stop()
         self.pipeline.shutdown()
         rumps.quit_application()

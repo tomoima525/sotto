@@ -89,6 +89,20 @@ class Recorder:
         # Fast attack, slow decay so the meter jumps to speech and eases back.
         self._level = rms if rms > self._level else self._level * 0.85 + rms * 0.15
 
+    def drain_chunks(self) -> np.ndarray | None:
+        """Return audio captured since the last drain, removing it from the
+        buffer. Used by streaming mode to consume audio mid-recording without
+        stopping the stream. Returns None when no new audio is buffered.
+
+        The swap is done under the lock (tiny critical section); the concatenate
+        runs outside it so the audio callback never blocks on a large copy.
+        """
+        with self._lock:
+            if not self._chunks:
+                return None
+            chunks, self._chunks = self._chunks, []
+        return np.concatenate(chunks)
+
     def stop(self) -> np.ndarray:
         """Stop recording and return the captured audio as a 1-D float32 array."""
         with self._lock:
