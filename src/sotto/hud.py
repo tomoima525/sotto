@@ -31,10 +31,13 @@ from libdispatch import dispatch_async, dispatch_get_main_queue
 
 log = logging.getLogger(__name__)
 
-_WIDTH = 680.0
-_HEIGHT = 120.0
-_MARGIN_BOTTOM = 120.0
-_MAX_CHARS = 280  # show the tail of long dictations
+_WIDTH = 520.0
+_HEIGHT = 56.0
+_MARGIN_TOP = 12.0  # gap below the menu bar
+_FONT_SIZE = 14.0
+_PAD_X = 16.0
+_PAD_Y = 8.0
+_MAX_CHARS = 200  # show the tail of long dictations
 _PLACEHOLDER = "Listening…"
 
 
@@ -59,8 +62,9 @@ class HUDController:
         if screen is None:
             return
         vf = screen.visibleFrame()
+        # Top-center, just below the menu bar (visibleFrame excludes the menu bar).
         x = vf.origin.x + (vf.size.width - _WIDTH) / 2.0
-        y = vf.origin.y + _MARGIN_BOTTOM
+        y = vf.origin.y + vf.size.height - _HEIGHT - _MARGIN_TOP
         rect = NSMakeRect(x, y, _WIDTH, _HEIGHT)
 
         panel = _HUDPanel.alloc().initWithContentRect_styleMask_backing_defer_(
@@ -86,17 +90,17 @@ class HUDController:
         layer.setBackgroundColor_(
             NSColor.colorWithCalibratedWhite_alpha_(0.0, 0.78).CGColor()
         )
-        layer.setCornerRadius_(16.0)
+        layer.setCornerRadius_(12.0)
 
         label = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(24, 16, _WIDTH - 48, _HEIGHT - 32)
+            NSMakeRect(_PAD_X, _PAD_Y, _WIDTH - 2 * _PAD_X, _HEIGHT - 2 * _PAD_Y)
         )
         label.setBezeled_(False)
         label.setDrawsBackground_(False)
         label.setEditable_(False)
         label.setSelectable_(False)
         label.setTextColor_(NSColor.whiteColor())
-        label.setFont_(NSFont.systemFontOfSize_(22.0))
+        label.setFont_(NSFont.systemFontOfSize_(_FONT_SIZE))
         label.setLineBreakMode_(NSLineBreakByWordWrapping)
         label.cell().setWraps_(True)
         label.setStringValue_(_PLACEHOLDER)
