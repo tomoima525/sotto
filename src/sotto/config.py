@@ -32,9 +32,10 @@ def _migrate_legacy_config() -> None:
 
 DEFAULT_WHISPER_MODEL = "mlx-community/whisper-large-v3-turbo"
 DEFAULT_LLM_MODEL = "mlx-community/Qwen3.5-4B-4bit"
-# Small, fast, multilingual model for streaming mode (much cheaper per call than
-# turbo — preview lag drops to ~1-2s, at the cost of accuracy).
-DEFAULT_STREAMING_WHISPER_MODEL = "mlx-community/whisper-small-mlx"
+# Mid-size multilingual model for streaming: more accurate than small, still far
+# cheaper per call than turbo (preview lag stays low). Drop to small/base/tiny
+# for lower latency if needed.
+DEFAULT_STREAMING_WHISPER_MODEL = "mlx-community/whisper-medium-mlx"
 
 WHISPER_MODEL_CHOICES = [
     "mlx-community/whisper-large-v3-turbo",
@@ -42,8 +43,10 @@ WHISPER_MODEL_CHOICES = [
     "mlx-community/whisper-large-v3-mlx",
 ]
 
-# Small multilingual models to experiment with for streaming.
+# Multilingual models to experiment with for streaming (larger = more accurate,
+# slower per phrase).
 STREAMING_WHISPER_MODEL_CHOICES = [
+    "mlx-community/whisper-medium-mlx",
     "mlx-community/whisper-small-mlx",
     "mlx-community/whisper-base-mlx",
     "mlx-community/whisper-tiny-mlx",
