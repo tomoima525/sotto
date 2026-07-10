@@ -42,12 +42,11 @@ WHISPER_MODEL_CHOICES = [
     "mlx-community/whisper-large-v3-mlx",
 ]
 
-# Small multilingual models to experiment with for streaming.
-STREAMING_WHISPER_MODEL_CHOICES = [
-    "mlx-community/whisper-small-mlx",
-    "mlx-community/whisper-base-mlx",
-    "mlx-community/whisper-tiny-mlx",
-]
+# repo -> menu label (with a short description of the speed/accuracy tradeoff).
+STREAMING_WHISPER_MODEL_CHOICES = {
+    "mlx-community/whisper-small-mlx": "Small — balanced, for daily use",
+    "mlx-community/whisper-base-mlx": "Base — faster, lower accuracy",
+}
 
 HOTKEY_CHOICES = ["alt_r", "cmd_r", "f13"]
 

@@ -85,8 +85,8 @@ class DictationApp(rumps.App):
             model_menu.add(item)
 
         stream_model_menu = rumps.MenuItem("Streaming Model")
-        for repo in STREAMING_WHISPER_MODEL_CHOICES:
-            item = rumps.MenuItem(repo.split("/")[-1], callback=self._pick_stream_model)
+        for repo, label in STREAMING_WHISPER_MODEL_CHOICES.items():
+            item = rumps.MenuItem(label, callback=self._pick_stream_model)
             item._model_repo = repo
             item.state = repo == self.config.streaming_whisper_model
             stream_model_menu.add(item)
