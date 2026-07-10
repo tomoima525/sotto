@@ -36,11 +36,12 @@ DEFAULT_LLM_MODEL = "mlx-community/Qwen3.5-4B-4bit"
 # turbo — preview lag drops to ~1-2s, at the cost of accuracy).
 DEFAULT_STREAMING_WHISPER_MODEL = "mlx-community/whisper-small-mlx"
 
-WHISPER_MODEL_CHOICES = [
-    "mlx-community/whisper-large-v3-turbo",
-    "mlx-community/whisper-large-v3-turbo-4bit",
-    "mlx-community/whisper-large-v3-mlx",
-]
+# repo -> menu label (with a short description of the speed/accuracy tradeoff).
+WHISPER_MODEL_CHOICES = {
+    "mlx-community/whisper-large-v3-turbo": "Turbo — balanced, recommended",
+    "mlx-community/whisper-large-v3-turbo-4bit": "Turbo (4-bit) — less memory, similar speed",
+    "mlx-community/whisper-large-v3-mlx": "Large v3 — most accurate, slower",
+}
 
 # repo -> menu label (with a short description of the speed/accuracy tradeoff).
 STREAMING_WHISPER_MODEL_CHOICES = {

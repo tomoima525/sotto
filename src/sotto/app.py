@@ -78,8 +78,8 @@ class DictationApp(rumps.App):
             hotkey_menu.add(item)
 
         model_menu = rumps.MenuItem("Whisper Model")
-        for repo in WHISPER_MODEL_CHOICES:
-            item = rumps.MenuItem(repo.split("/")[-1], callback=self._pick_model)
+        for repo, label in WHISPER_MODEL_CHOICES.items():
+            item = rumps.MenuItem(label, callback=self._pick_model)
             item._model_repo = repo
             item.state = repo == self.config.whisper_model
             model_menu.add(item)
