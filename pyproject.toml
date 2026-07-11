@@ -1,6 +1,6 @@
 [project]
 name = "sotto"
-version = "1.0.2"
+version = "1.1.0"
 description = "Fully-local dictation for macOS: hold a hotkey, speak, get cleaned text at your cursor"
 readme = "README.md"
 license = "MIT"
