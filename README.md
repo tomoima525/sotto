@@ -9,7 +9,7 @@ Everything runs on-device via [MLX](https://github.com/ml-explore/mlx). No audio
 - **ASR**: `mlx-community/whisper-large-v3-turbo` (EN/JA auto-detect)
 - **Cleanup**: `mlx-community/Qwen3.5-4B-4bit` (can be toggled off)
 - **Memory**: ~4.5 GB resident while running
-- **Latency**: ~2–3 s for a 10 s utterance after warmup
+- **Latency**: ~1 s when the transcript needs no cleanup, ~2–3 s when the LLM runs (after warmup)
 
 ## Setup
 
@@ -70,6 +70,19 @@ Menu bar: 🎤 idle · live waveform while recording · ✍️ processing · �
 
 Config lives at `~/Library/Application Support/sotto/config.toml`.
 
+### Cleanup gate
+
+Whisper already returns punctuated, capitalized text in both languages, so on a
+filler-free utterance the cleanup LLM spends ~1 s to hand back what it was given
+— and occasionally rewrites Japanese politeness forms it was told to preserve.
+Sotto therefore runs the LLM only when the transcript actually needs it: when it
+contains filler words, or when it lacks sentence-final punctuation (a fragment).
+On clean dictation this removes roughly half the post-release latency.
+
+The tradeoff is that skipped transcripts also miss the LLM's incidental fixes
+(e.g. "ten thirty" → "10:30"). To always run the model, set `cleanup_gate = false`
+in `config.toml`. To turn cleanup off entirely, use the menu bar toggle.
+
 ### Testing each stage
 
 ```sh
@@ -80,6 +93,9 @@ uv run sotto transcribe --language ja  # force Japanese (auto/en/ja)
 uv run sotto stream --seconds 15    # streaming: live segments + final cleaned text
 uv run sotto stream --model mlx-community/whisper-base-mlx  # try a faster model
 uv run sotto clean "um so I think uh we should ship it"
+uv run sotto clean --force "Already clean."  # bypass the gate, always run the LLM
+uv run sotto gate-test              # cleanup gate: decisions + time saved (no mic needed)
+uv run sotto gate-test --no-verify  # gate decisions only, instant (skips the model load)
 uv run sotto inject "テスト ✅" --delay 3  # focus a text field within 3s
 uv run sotto run --no-menubar       # full pipeline, headless with logs
 ```

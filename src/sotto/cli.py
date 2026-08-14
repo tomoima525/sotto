@@ -166,14 +166,113 @@ def cmd_stream(args, config: Config) -> None:
 
 
 def cmd_clean(args, config: Config) -> None:
-    from .cleaner import Cleaner
+    from .cleaner import Cleaner, needs_cleanup
 
-    cleaner = Cleaner(config.llm_model)
+    needed, reason = needs_cleanup(args.text)
+    gate = "run LLM" if needed else "skip LLM"
+    if args.force and not needed:
+        gate = "skip LLM (overridden by --force)"
+    print(f"Gate: {gate}  ({reason})")
+    if not needed and not args.force:
+        print("(0.0s) Cleaned: " + repr(args.text.strip()))
+        return
+
+    cleaner = Cleaner(config.llm_model, gate_enabled=False)
     print("Loading LLM...")
     cleaner.warmup()
     t0 = time.monotonic()
     cleaned = cleaner.clean(args.text)
     print(f"({time.monotonic() - t0:.1f}s) Cleaned: {cleaned!r}")
+
+
+# Transcripts as Whisper actually returns them (punctuated, fillers intact),
+# paired with whether the gate is expected to skip the LLM pass.
+GATE_CORPUS: list[tuple[str, str, bool]] = [
+    # -- expected to skip: clean, punctuated, filler-free --
+    ("en", "So I think we should ship the new feature on Friday, and then follow up with the team about the migration plan next week.", True),
+    ("en", "Let's move the standup to ten thirty tomorrow.", True),
+    ("en", "The build is failing on the integration tests again.", True),
+    ("ja", "来週の金曜日なんですけど、午後なら空いてますので、ご都合いかがでしょうか。", True),
+    ("ja", "会議の資料は今日中に共有します。", True),
+    # "likely" must not trip the \blike\b filler pattern.
+    ("en", "That's likely the root cause of the regression.", True),
+    # -- expected to run the LLM: fillers present --
+    ("en", "Um, so basically what I want to do is, uh, refactor the whole thing, you know, and then like ship it on Friday.", False),
+    ("en", "I mean, it's sort of working, but hmm, not really.", False),
+    ("ja", "えーと、あの、来週の金曜日なんですけど、なんか午後なら空いてますので、まあ、ご都合いかがでしょうか。", False),
+    ("ja", "えっと、そのー、ちょっと確認させてください。", False),
+    # -- expected to run the LLM: fragment, no terminal punctuation --
+    ("en", "just pushed the fix to the branch", False),
+    ("ja", "ちょっと待ってください", False),
+]
+
+
+def cmd_gate_test(args, config: Config) -> None:
+    """Evaluate the cleanup gate against a built-in corpus.
+
+    Needs no microphone and writes nothing: it prints, per sample, whether the
+    gate skipped the LLM, whether that matched expectations, and (unless
+    --no-verify) what the LLM would have produced — so a skip that would have
+    changed the text shows up as a regression rather than silently.
+    """
+    from .cleaner import Cleaner, needs_cleanup
+
+    verify = not args.no_verify
+    samples = [s for s in GATE_CORPUS if args.language in (None, "auto", s[0])]
+
+    cleaner = Cleaner(config.llm_model, gate_enabled=False)  # gate applied manually
+    if verify:
+        print(f"Loading {config.llm_model} (once, ~10s)...")
+        cleaner.warmup()
+
+    print(f"\nCleanup gate — {len(samples)} samples, model={config.llm_model}")
+    print("  ○ = gate skipped the LLM      ● = gate ran the LLM\n")
+
+    skipped = wrong = changed = 0
+    gated_time = ungated_time = 0.0
+
+    for lang, text, expect_skip in samples:
+        needed, reason = needs_cleanup(text)
+        ok = needed != expect_skip
+        if not ok:
+            wrong += 1
+
+        llm_out, llm_dt = None, 0.0
+        if verify:
+            t0 = time.monotonic()
+            llm_out = cleaner.clean(text)
+            llm_dt = time.monotonic() - t0
+        ungated_time += llm_dt
+        if needed:
+            gated_time += llm_dt
+        else:
+            skipped += 1
+
+        mark = "●" if needed else "○"
+        verdict = "ok " if ok else "MISMATCH"
+        print(f"{mark} {lang}  {verdict}  {llm_dt:5.2f}s  ({reason})")
+        print(f"    in : {text}")
+        if verify and llm_out != text:
+            if not needed:
+                changed += 1
+                print("    LLM would have changed this (skipped it anyway):")
+            print(f"    out: {llm_out}")
+        print()
+
+    print("Summary")
+    print(f"  skipped        {skipped}/{len(samples)} samples")
+    print(f"  gate decisions {len(samples) - wrong}/{len(samples)} as expected"
+          + ("" if not wrong else f"   <-- {wrong} MISMATCH"))
+    if verify:
+        saved = ungated_time - gated_time
+        pct = (100 * saved / ungated_time) if ungated_time else 0.0
+        print(f"  LLM time       {gated_time:.1f}s with gate vs {ungated_time:.1f}s without"
+              f"  ({saved:.1f}s saved, -{pct:.0f}%)")
+        print(f"  skips that would have changed the text: {changed}")
+    if wrong:
+        print("\nFAIL: gate did not decide as expected on every sample.")
+        sys.exit(1)
+    print("\nPASS")
 
 
 def cmd_inject(args, config: Config) -> None:
@@ -281,6 +380,21 @@ def main() -> None:
 
     p = sub.add_parser("clean", help="run LLM cleanup on a string")
     p.add_argument("text")
+    p.add_argument(
+        "--force", action="store_true", help="bypass the gate and always run the LLM"
+    )
+
+    p = sub.add_parser("gate-test", help="evaluate the cleanup gate on a built-in corpus")
+    p.add_argument(
+        "--language",
+        choices=list(LANGUAGE_CHOICES),
+        help="only test samples in this language (default: all)",
+    )
+    p.add_argument(
+        "--no-verify",
+        action="store_true",
+        help="skip the LLM entirely; just show gate decisions (fast, no model load)",
+    )
 
     p = sub.add_parser("inject", help="paste text into the focused app")
     p.add_argument("text")
@@ -308,6 +422,7 @@ def main() -> None:
         "transcribe": cmd_transcribe,
         "stream": cmd_stream,
         "clean": cmd_clean,
+        "gate-test": cmd_gate_test,
         "inject": cmd_inject,
         "hotkey-test": cmd_hotkey_test,
         "run": cmd_run,

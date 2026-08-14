@@ -72,6 +72,10 @@ class Config:
     whisper_model: str = DEFAULT_WHISPER_MODEL
     llm_model: str = DEFAULT_LLM_MODEL
     cleanup_enabled: bool = True
+    # Skip the LLM pass when the transcript has no fillers and is already
+    # punctuated — Whisper's output usually needs no cleanup at all. Set false
+    # in config.toml to always run the model (the pre-1.2 behaviour).
+    cleanup_gate: bool = True
     language: str = "auto"  # "auto" | whisper language code ("en", "ja", ...)
     input_device: str = "default"  # device name, or "default" for system default
     input_mode: str = "hold"  # "hold" | "toggle" | "streaming"
