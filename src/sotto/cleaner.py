@@ -49,10 +49,63 @@ MAX_LENGTH_RATIO = 1.5
 
 _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 
+# -- cleanup gate --
+#
+# Whisper already returns punctuated, capitalized text in both languages, so
+# rule 2 of SYSTEM_PROMPT is mostly redundant and filler removal (rule 1) is
+# the only work left. On a filler-free utterance the LLM costs ~1s to return
+# its input verbatim — and occasionally rewrites politeness forms in Japanese,
+# against rule 4. Skipping those calls is both faster and safer.
+#
+# The patterns mirror rule 1 and are deliberately generous: a false positive
+# only costs a cleanup pass we would have run anyway, while a false negative
+# leaks fillers into the pasted text.
+_EN_FILLER_RE = re.compile(
+    r"\b(?:u+m+|u+h+|e+rm+|hm+|like|y'?know|you know|i mean|sort of|kind of)\b",
+    re.IGNORECASE,
+)
+# Japanese has no word boundaries, so these are plain substring matches.
+_JA_FILLERS = (
+    "えーと", "えっと", "えー", "ええと", "あのー", "あの", "そのー",
+    "なんか", "なんて言うか", "まあ", "ですね", "うーん",
+)
+
+# Sentence-final punctuation Whisper emits when it has transcribed a complete
+# utterance; its absence usually means a fragment the LLM should still tidy.
+_TERMINAL_PUNCT = ".!?。！？…‥"
+# Closers that may legitimately follow terminal punctuation.
+_TRAILING_CLOSERS = "\"'”’)）]］}】」』〕>》 \t\n"
+
+
+def find_fillers(text: str) -> list[str]:
+    """Return the filler tokens present in `text` (for logging and tests)."""
+    found = [m.group(0) for m in _EN_FILLER_RE.finditer(text)]
+    found += [f for f in _JA_FILLERS if f in text]
+    return found
+
+
+def needs_cleanup(text: str) -> tuple[bool, str]:
+    """Decide whether `text` is worth an LLM pass.
+
+    Returns (needs_cleanup, reason). Cleanup is skipped only when the text is
+    both filler-free and already terminally punctuated — i.e. when there is
+    nothing for the model to do that Whisper has not done already.
+    """
+    text = text.strip()
+    if not text:
+        return False, "empty"
+    fillers = find_fillers(text)
+    if fillers:
+        return True, f"fillers: {', '.join(sorted(set(fillers))[:4])}"
+    if text.rstrip(_TRAILING_CLOSERS)[-1:] not in _TERMINAL_PUNCT:
+        return True, "no terminal punctuation"
+    return False, "clean: no fillers, already punctuated"
+
 
 class Cleaner:
-    def __init__(self, model_repo: str) -> None:
+    def __init__(self, model_repo: str, gate_enabled: bool = True) -> None:
         self.model_repo = model_repo
+        self.gate_enabled = gate_enabled
         self._model = None
         self._tokenizer = None
         self._chat_kwargs: dict = {"enable_thinking": False}
@@ -198,6 +251,12 @@ class Cleaner:
         transcript = transcript.strip()
         if not transcript:
             return transcript
+        if self.gate_enabled:
+            needed, reason = needs_cleanup(transcript)
+            if not needed:
+                log.info("Cleanup skipped (%s), %d chars", reason, len(transcript))
+                return transcript
+            log.debug("Cleanup needed (%s)", reason)
         try:
             self.load()
             t0 = time.monotonic()

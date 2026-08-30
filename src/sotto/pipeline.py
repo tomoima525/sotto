@@ -51,7 +51,7 @@ class Pipeline:
 
         self.recorder = Recorder(device_name=config.input_device)
         self.transcriber = Transcriber(config.whisper_model, config.language)
-        self.cleaner = Cleaner(config.llm_model)
+        self.cleaner = Cleaner(config.llm_model, gate_enabled=config.cleanup_gate)
 
         # Streaming: a small fast model + an energy VAD. Warmed lazily on first
         # stream so normal startup isn't slowed by a second model load.
