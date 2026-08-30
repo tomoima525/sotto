@@ -12,12 +12,13 @@ import enum
 import logging
 import queue
 import threading
+import time
 from typing import Callable
 
 from .cleaner import Cleaner
 from .config import Config
 from .injector import inject
-from .recorder import Recorder
+from .recorder import SAMPLE_RATE, Recorder
 from .transcriber import Transcriber
 from .vad import EnergyVADSegmenter
 
@@ -35,6 +36,16 @@ class State(enum.Enum):
 # How often the stream loop drains audio and runs the VAD.
 DRAIN_INTERVAL_S = 0.25
 
+# Draft previews of the in-progress phrase (pattern borrowed from hayamimi):
+# while speech is ongoing, periodically re-transcribe the unfinalized segment
+# and show the result as a throwaway draft that the next draft or the phrase's
+# final text replaces. The throttle is measured from the END of the previous
+# draft decode, so a decode slower than the interval self-paces instead of
+# starving segment finalization.
+DRAFT_EVERY_S = 0.5   # min gap between draft decodes
+DRAFT_WINDOW_S = 8.0  # decode at most this much of the phrase tail per draft
+DRAFT_MIN_AUDIO_S = 0.5  # don't draft until the phrase has this much audio
+
 
 class Pipeline:
     def __init__(
@@ -45,7 +56,10 @@ class Pipeline:
     ) -> None:
         self.config = config
         self._on_state_change = on_state_change
-        # on_partial(kind, text): kind in {"start","append","commit","end"}
+        # on_partial(kind, text): kind in {"start","draft","append","commit","end"}
+        # "draft" carries the transcript plus an in-progress preview of the
+        # current phrase; each draft (or the phrase's final "append") replaces
+        # the previous one.
         self._on_partial = on_partial
         self.state = State.LOADING
 
@@ -64,6 +78,7 @@ class Pipeline:
             max_segment_s=config.streaming_max_segment_s,
         )
         self._transcript_parts: list[str] = []
+        self._last_draft = 0.0  # monotonic time the last draft decode finished
         self._stream_stop: threading.Event | None = None
         self._stream_thread: threading.Thread | None = None
 
@@ -110,9 +125,10 @@ class Pipeline:
             except Exception:
                 log.exception("Partial-text callback failed")
 
-    def _join_transcript(self) -> str:
+    def _join_transcript(self, draft: str = "") -> str:
+        parts = self._transcript_parts + ([draft] if draft else [])
         sep = "" if self.config.language == "ja" else " "
-        return sep.join(self._transcript_parts).strip()
+        return sep.join(parts).strip()
 
     def _run(self) -> None:
         try:
@@ -204,6 +220,7 @@ class Pipeline:
             if audio is not None:
                 for seg in self.vad.feed(audio):
                     self._transcribe_and_emit(seg)
+            self._maybe_emit_draft()
             stop.wait(DRAIN_INTERVAL_S)
         # Final flush: capture and transcribe the in-progress phrase.
         tail = self.recorder.drain_chunks()
@@ -214,6 +231,30 @@ class Pipeline:
         if final is not None:
             self._transcribe_and_emit(final)
 
+    def _maybe_emit_draft(self) -> None:
+        """Preview the in-progress phrase by transcribing its unfinalized audio.
+
+        Finalized segments always come first (the caller feeds the VAD before
+        drafting), and a finalize empties the pending buffer, so a draft never
+        races the phrase's own final text.
+        """
+        if not self.vad.in_speech:
+            return
+        if time.monotonic() - self._last_draft < DRAFT_EVERY_S:
+            return
+        cur = self.vad.current_audio(DRAFT_WINDOW_S)
+        if len(cur) < int(DRAFT_MIN_AUDIO_S * SAMPLE_RATE):
+            return
+        try:
+            draft = self.stream_transcriber.transcribe(cur)
+        except Exception:
+            log.exception("Draft transcription failed")
+            draft = ""
+        finally:
+            self._last_draft = time.monotonic()
+        if draft:
+            self._emit_partial("draft", self._join_transcript(draft))
+
     def _transcribe_and_emit(self, seg) -> None:
         try:
             text = self.stream_transcriber.transcribe(seg)
@@ -221,6 +262,9 @@ class Pipeline:
             log.exception("Streaming segment transcription failed")
             return
         if not text:
+            # Still refresh the overlay: a stale draft of this phrase may be
+            # showing, and the phrase just finalized to nothing (noise).
+            self._emit_partial("append", self._join_transcript())
             return
         self._transcript_parts.append(text)
         self._emit_partial("append", self._join_transcript())

@@ -127,7 +127,35 @@ def cmd_stream(args, config: Config) -> None:
     recorder = Recorder(device_name=config.input_device)
     parts: list[str] = []
 
+    # Draft preview of the in-progress phrase, overwritten in place on a tty
+    # (mirrors the pipeline's DRAFT_* behaviour so latency is measurable here).
+    from .pipeline import DRAFT_EVERY_S, DRAFT_MIN_AUDIO_S, DRAFT_WINDOW_S
+
+    tty = sys.stdout.isatty()
+    draft_state = {"last": 0.0, "shown": 0}
+
+    def clear_draft():
+        if tty and draft_state["shown"]:
+            print("\r" + " " * (draft_state["shown"] + 2) + "\r", end="", flush=True)
+            draft_state["shown"] = 0
+
+    def maybe_draft():
+        if not tty or not vad.in_speech:
+            return
+        if time.monotonic() - draft_state["last"] < DRAFT_EVERY_S:
+            return
+        cur = vad.current_audio(DRAFT_WINDOW_S)
+        if len(cur) < int(DRAFT_MIN_AUDIO_S * SAMPLE_RATE):
+            return
+        text = transcriber.transcribe(cur)
+        draft_state["last"] = time.monotonic()
+        if text:
+            pad = max(draft_state["shown"] - len(text), 0)
+            print("\r~ " + text + " " * pad, end="", flush=True)
+            draft_state["shown"] = len(text)
+
     def handle(seg):
+        clear_draft()
         t0 = time.monotonic()
         text = transcriber.transcribe(seg)
         dt = time.monotonic() - t0
@@ -143,6 +171,7 @@ def cmd_stream(args, config: Config) -> None:
         if audio is not None:
             for seg in vad.feed(audio):
                 handle(seg)
+        maybe_draft()
         time.sleep(0.25)
     tail = recorder.drain_chunks()
     if tail is not None:
@@ -152,6 +181,7 @@ def cmd_stream(args, config: Config) -> None:
     if final is not None:
         handle(final)
     recorder.stop()
+    clear_draft()
 
     sep = "" if lang == "ja" else " "
     full = sep.join(parts).strip()
