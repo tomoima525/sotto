@@ -82,6 +82,11 @@ class Config:
     streaming_whisper_model: str = DEFAULT_STREAMING_WHISPER_MODEL
     streaming_silence_ms: int = 700  # trailing pause that ends a phrase
     streaming_max_segment_s: float = 12.0  # hard cut for a long monologue
+    # When a streaming session ends, re-transcribe the whole dictation with the
+    # main (accurate) model instead of pasting the small model's phrase texts.
+    # Costs extra stop latency proportional to the dictation length; set false
+    # to paste the small model's transcript directly (the pre-refine behaviour).
+    streaming_refine: bool = True
 
     @classmethod
     def load(cls) -> "Config":

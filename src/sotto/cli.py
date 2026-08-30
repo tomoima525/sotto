@@ -126,6 +126,8 @@ def cmd_stream(args, config: Config) -> None:
     )
     recorder = Recorder(device_name=config.input_device)
     parts: list[str] = []
+    seg_audio: list = []  # finalized segments' audio, for the refine pass
+    refine = config.streaming_refine and not args.no_refine
 
     # Draft preview of the in-progress phrase, overwritten in place on a tty
     # (mirrors the pipeline's DRAFT_* behaviour so latency is measurable here).
@@ -156,6 +158,8 @@ def cmd_stream(args, config: Config) -> None:
 
     def handle(seg):
         clear_draft()
+        if refine:
+            seg_audio.append(seg)
         t0 = time.monotonic()
         text = transcriber.transcribe(seg)
         dt = time.monotonic() - t0
@@ -186,6 +190,18 @@ def cmd_stream(args, config: Config) -> None:
     sep = "" if lang == "ja" else " "
     full = sep.join(parts).strip()
     print(f"\nRaw transcript: {full!r}")
+    if refine and seg_audio:
+        print(f"Refining with {config.whisper_model}...")
+        main_transcriber = Transcriber(config.whisper_model, lang)
+        main_transcriber.warmup()
+        t0 = time.monotonic()
+        refined = main_transcriber.transcribe(np.concatenate(seg_audio))
+        print(f"({time.monotonic() - t0:.1f}s) Refined:        {refined!r}")
+        # same content guard as the pipeline: a much-shorter refine dropped speech
+        if len(refined.strip()) >= 0.7 * len(full):
+            full = refined
+        else:
+            print("Refine dropped content; keeping the streaming transcript.")
     if full and not args.no_cleanup:
         from .cleaner import Cleaner
 
@@ -407,6 +423,11 @@ def main() -> None:
     )
     p.add_argument("--model", help="streaming whisper repo (default: config value)")
     p.add_argument("--no-cleanup", action="store_true", help="skip the LLM cleanup pass")
+    p.add_argument(
+        "--no-refine",
+        action="store_true",
+        help="skip re-transcribing the audio with the main model at the end",
+    )
 
     p = sub.add_parser("clean", help="run LLM cleanup on a string")
     p.add_argument("text")

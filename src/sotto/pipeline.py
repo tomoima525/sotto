@@ -15,6 +15,8 @@ import threading
 import time
 from typing import Callable
 
+import numpy as np
+
 from .cleaner import Cleaner
 from .config import Config
 from .injector import inject
@@ -45,6 +47,14 @@ DRAIN_INTERVAL_S = 0.25
 DRAFT_EVERY_S = 0.5   # min gap between draft decodes
 DRAFT_WINDOW_S = 8.0  # decode at most this much of the phrase tail per draft
 DRAFT_MIN_AUDIO_S = 0.5  # don't draft until the phrase has this much audio
+
+# Refine pass (hayamimi's two-pass idea, collapsed to one pass at stop): the
+# live preview comes from the small model, but the pasted text is a fresh
+# decode of the whole dictation by the accurate main model. Beyond this much
+# speech the re-decode is skipped — stop latency grows with dictation length
+# (roughly transcriber RTF x duration) and a very long dictation gets the
+# small-model transcript plus LLM cleanup, as before.
+REFINE_MAX_S = 120.0
 
 
 class Pipeline:
@@ -78,6 +88,10 @@ class Pipeline:
             max_segment_s=config.streaming_max_segment_s,
         )
         self._transcript_parts: list[str] = []
+        # Finalized segments' audio, kept (in RAM only, like everything else)
+        # for the refine pass at stop; dropped once the dictation ends.
+        self._segment_audio: list[np.ndarray] = []
+        self._stream_audio_s = 0.0
         self._last_draft = 0.0  # monotonic time the last draft decode finished
         self._stream_stop: threading.Event | None = None
         self._stream_thread: threading.Thread | None = None
@@ -200,6 +214,8 @@ class Pipeline:
             self._stream_warmed = True
         self.vad.reset()
         self._transcript_parts = []
+        self._segment_audio = []
+        self._stream_audio_s = 0.0
         self._stream_stop = threading.Event()
         self._set_state(State.STREAMING)
         self.recorder.start()
@@ -255,7 +271,46 @@ class Pipeline:
         if draft:
             self._emit_partial("draft", self._join_transcript(draft))
 
+    def _collect_for_refine(self, seg: np.ndarray) -> None:
+        """Keep a finalized segment's audio for the refine pass at stop.
+
+        Kept even when the small model transcribes it to nothing — the main
+        model may still recover that speech. Past REFINE_MAX_S the refine pass
+        won't run, so the collected audio is freed instead of accumulating.
+        """
+        if not self.config.streaming_refine:
+            return
+        self._stream_audio_s += len(seg) / SAMPLE_RATE
+        if self._stream_audio_s <= REFINE_MAX_S:
+            self._segment_audio.append(seg)
+        elif self._segment_audio:
+            log.info("Refine off for this dictation: over %.0fs of speech", REFINE_MAX_S)
+            self._segment_audio = []
+
+    def _refine_or_join(self) -> str:
+        """The transcript to clean and paste: a fresh main-model decode of the
+        whole dictation when possible, else the joined small-model parts."""
+        fast = self._join_transcript()
+        audio, self._segment_audio = self._segment_audio, []
+        if not self.config.streaming_refine or not audio:
+            return fast
+        try:
+            t0 = time.monotonic()
+            refined = self.transcriber.transcribe(np.concatenate(audio))
+            log.info("Refine pass took %.1fs", time.monotonic() - t0)
+        except Exception:
+            log.exception("Refine pass failed; using the streaming transcript")
+            return fast
+        # A re-decode must never lose content (hayamimi's guard): coming back
+        # much shorter than the fast parts means it dropped speech.
+        if len(refined.strip()) < 0.7 * len(fast):
+            log.info("Refine dropped content (%d vs %d chars); using the "
+                     "streaming transcript", len(refined.strip()), len(fast))
+            return fast
+        return refined
+
     def _transcribe_and_emit(self, seg) -> None:
+        self._collect_for_refine(seg)
         try:
             text = self.stream_transcriber.transcribe(seg)
         except Exception:
@@ -282,7 +337,7 @@ class Pipeline:
 
         self._set_state(State.PROCESSING)
         try:
-            full = self._join_transcript()
+            full = self._refine_or_join()
             if not full:
                 log.info("Nothing transcribed; skipping")
             else:
