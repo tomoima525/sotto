@@ -70,6 +70,25 @@ class EnergyVADSegmenter:
 
     # -- public --
 
+    @property
+    def in_speech(self) -> bool:
+        """True while an unfinalized segment contains speech-level audio."""
+        return self._in_speech
+
+    def current_audio(self, max_s: float | None = None) -> np.ndarray:
+        """Audio of the in-progress (unfinalized) segment, newest last.
+
+        Read-only peek for draft transcription; the segment keeps accumulating
+        until feed()/flush() finalizes it. `max_s` caps the returned tail so
+        draft decoding cost stays bounded on a long monologue.
+        """
+        audio = self._seg_audio()
+        if max_s is not None:
+            cap = int(max_s * SAMPLE_RATE)
+            if len(audio) > cap:
+                audio = audio[-cap:]
+        return audio
+
     def feed(self, audio: np.ndarray) -> list[np.ndarray]:
         """Consume a block of audio; return any segments finalized within it."""
         segments: list[np.ndarray] = []

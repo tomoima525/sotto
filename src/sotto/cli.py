@@ -126,8 +126,40 @@ def cmd_stream(args, config: Config) -> None:
     )
     recorder = Recorder(device_name=config.input_device)
     parts: list[str] = []
+    seg_audio: list = []  # finalized segments' audio, for the refine pass
+    refine = config.streaming_refine and not args.no_refine
+
+    # Draft preview of the in-progress phrase, overwritten in place on a tty
+    # (mirrors the pipeline's DRAFT_* behaviour so latency is measurable here).
+    from .pipeline import DRAFT_EVERY_S, DRAFT_MIN_AUDIO_S, DRAFT_WINDOW_S
+
+    tty = sys.stdout.isatty()
+    draft_state = {"last": 0.0, "shown": 0}
+
+    def clear_draft():
+        if tty and draft_state["shown"]:
+            print("\r" + " " * (draft_state["shown"] + 2) + "\r", end="", flush=True)
+            draft_state["shown"] = 0
+
+    def maybe_draft():
+        if not tty or not vad.in_speech:
+            return
+        if time.monotonic() - draft_state["last"] < DRAFT_EVERY_S:
+            return
+        cur = vad.current_audio(DRAFT_WINDOW_S)
+        if len(cur) < int(DRAFT_MIN_AUDIO_S * SAMPLE_RATE):
+            return
+        text = transcriber.transcribe(cur)
+        draft_state["last"] = time.monotonic()
+        if text:
+            pad = max(draft_state["shown"] - len(text), 0)
+            print("\r~ " + text + " " * pad, end="", flush=True)
+            draft_state["shown"] = len(text)
 
     def handle(seg):
+        clear_draft()
+        if refine:
+            seg_audio.append(seg)
         t0 = time.monotonic()
         text = transcriber.transcribe(seg)
         dt = time.monotonic() - t0
@@ -143,6 +175,7 @@ def cmd_stream(args, config: Config) -> None:
         if audio is not None:
             for seg in vad.feed(audio):
                 handle(seg)
+        maybe_draft()
         time.sleep(0.25)
     tail = recorder.drain_chunks()
     if tail is not None:
@@ -152,10 +185,23 @@ def cmd_stream(args, config: Config) -> None:
     if final is not None:
         handle(final)
     recorder.stop()
+    clear_draft()
 
     sep = "" if lang == "ja" else " "
     full = sep.join(parts).strip()
     print(f"\nRaw transcript: {full!r}")
+    if refine and seg_audio:
+        print(f"Refining with {config.whisper_model}...")
+        main_transcriber = Transcriber(config.whisper_model, lang)
+        main_transcriber.warmup()
+        t0 = time.monotonic()
+        refined = main_transcriber.transcribe(np.concatenate(seg_audio))
+        print(f"({time.monotonic() - t0:.1f}s) Refined:        {refined!r}")
+        # same content guard as the pipeline: a much-shorter refine dropped speech
+        if len(refined.strip()) >= 0.7 * len(full):
+            full = refined
+        else:
+            print("Refine dropped content; keeping the streaming transcript.")
     if full and not args.no_cleanup:
         from .cleaner import Cleaner
 
@@ -377,6 +423,11 @@ def main() -> None:
     )
     p.add_argument("--model", help="streaming whisper repo (default: config value)")
     p.add_argument("--no-cleanup", action="store_true", help="skip the LLM cleanup pass")
+    p.add_argument(
+        "--no-refine",
+        action="store_true",
+        help="skip re-transcribing the audio with the main model at the end",
+    )
 
     p = sub.add_parser("clean", help="run LLM cleanup on a string")
     p.add_argument("text")

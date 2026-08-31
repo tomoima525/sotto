@@ -175,7 +175,7 @@ class DictationApp(rumps.App):
         # main thread itself, so we can call it directly.
         if kind == "start":
             self.hud.show()
-        elif kind in ("append", "commit"):
+        elif kind in ("draft", "append", "commit"):
             self.hud.set_text(text)
         elif kind == "end":
             self.hud.hide()
