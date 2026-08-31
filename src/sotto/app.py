@@ -175,10 +175,16 @@ class DictationApp(rumps.App):
         # main thread itself, so we can call it directly.
         if kind == "start":
             self.hud.show()
-        elif kind in ("draft", "append", "commit"):
+        elif kind in ("draft", "append"):
+            self.hud.set_text(text)
+        elif kind == "status":
+            self.hud.set_status(text)
+        elif kind == "commit":
+            self.hud.set_status("")
             self.hud.set_text(text)
         elif kind == "end":
-            self.hud.hide()
+            # Hold the pasted text on screen for a beat, then fade out.
+            self.hud.dismiss(1.0)
 
     def _start_meter(self) -> None:
         self._wave.clear()

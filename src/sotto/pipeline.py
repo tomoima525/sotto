@@ -66,7 +66,10 @@ class Pipeline:
     ) -> None:
         self.config = config
         self._on_state_change = on_state_change
-        # on_partial(kind, text): kind in {"start","draft","append","commit","end"}
+        # on_partial(kind, text): kind in
+        # {"start","draft","append","status","commit","end"}
+        # "status" carries a label for the post-stop work (refine, cleanup) so
+        # the overlay can show a spinner instead of freezing on the last draft.
         # "draft" carries the transcript plus an in-progress preview of the
         # current phrase; each draft (or the phrase's final "append") replaces
         # the previous one.
@@ -296,6 +299,7 @@ class Pipeline:
             return fast
         try:
             t0 = time.monotonic()
+            self._emit_partial("status", "Transcribing with the main model…")
             refined = self.transcriber.transcribe(np.concatenate(audio))
             log.info("Refine pass took %.1fs", time.monotonic() - t0)
         except Exception:
@@ -341,7 +345,11 @@ class Pipeline:
             if not full:
                 log.info("Nothing transcribed; skipping")
             else:
-                cleaned = self.cleaner.clean(full) if self.config.cleanup_enabled else full
+                if self.config.cleanup_enabled:
+                    self._emit_partial("status", "Cleaning up…")
+                    cleaned = self.cleaner.clean(full)
+                else:
+                    cleaned = full
                 self._emit_partial("commit", cleaned)
                 inject(cleaned)
         except Exception:
