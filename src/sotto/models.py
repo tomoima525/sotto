@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import glob
 import logging
+import shutil
 import tarfile
 import threading
 import urllib.request
@@ -138,14 +139,22 @@ def download_reazon(progress_cb=None) -> Path:
                     if progress_cb:
                         progress_cb(read, total)
             log.info("Extracting to %s", target)
-            with tarfile.open(tmp, "r:bz2") as tf:
-                # Single top-level directory named after the tarball; the
-                # "data" filter refuses path traversal and other surprises.
-                top = tf.getmembers()[0].name.split("/")[0]
-                tf.extractall(parent, filter="data")
-            extracted = parent / top
-            if extracted != target:
-                extracted.replace(target)
+            # Extract into a staging dir and rename into place, so an
+            # interrupted extraction can never leave a truncated .onnx at the
+            # final path (sherpa-onnx would then fail with an opaque
+            # onnxruntime/protobuf error every launch).
+            staging = parent / f".{REAZON_DIR_NAME}.extracting"
+            shutil.rmtree(staging, ignore_errors=True)
+            try:
+                with tarfile.open(tmp, "r:bz2") as tf:
+                    # Single top-level directory named after the tarball; the
+                    # "data" filter refuses path traversal and other surprises.
+                    top = tf.getmembers()[0].name.split("/")[0]
+                    tf.extractall(staging, filter="data")
+                shutil.rmtree(target, ignore_errors=True)  # stale partial dir
+                (staging / top).replace(target)
+            finally:
+                shutil.rmtree(staging, ignore_errors=True)
         finally:
             tmp.unlink(missing_ok=True)
         if not reazon_is_cached():
