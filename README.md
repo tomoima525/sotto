@@ -6,7 +6,7 @@ Fully-local dictation for macOS (Apple Silicon). Hold a hotkey, speak in English
 
 Everything runs on-device via [MLX](https://github.com/ml-explore/mlx). No audio or text ever leaves your Mac, and nothing is persisted — audio and transcripts live only in RAM.
 
-- **ASR**: `mlx-community/whisper-large-v3-turbo` (EN/JA auto-detect)
+- **ASR**: `mlx-community/whisper-large-v3-turbo` (EN/JA auto-detect); Japanese-only sessions use [ReazonSpeech](https://huggingface.co/reazon-research/reazonspeech-k2-v2) (ONNX, CPU) for roughly half the error rate
 - **Cleanup**: `mlx-community/Qwen3.5-4B-4bit` (can be toggled off)
 - **Memory**: ~4.5 GB resident while running
 - **Latency**: ~1 s when the transcript needs no cleanup, ~2–3 s when the LLM runs (after warmup)
@@ -66,9 +66,20 @@ Hold **Right Option (⌥)**, speak, release. The cleaned text is pasted into the
 - **Toggle** — press once to start, again to stop.
 - **Streaming (live preview)** — press once to start; a floating overlay shows your words **as you speak**: while a phrase is still in progress a draft preview updates roughly twice a second, then the finished phrase replaces it, transcribed by a small fast Whisper model. Press again to stop; the full transcript is cleaned up by the LLM and pasted once into the focused app. The overlay never steals focus. Streaming uses a separate, smaller model for low latency — pick it under **Streaming Model**: **Small** (balanced, for daily use) or **Base** (faster, lower accuracy). The small model's accuracy only affects the live preview: when you stop, the whole dictation is re-transcribed once by the main (turbo) model before cleanup, so the pasted text doesn't inherit the preview's errors. That re-pass adds stop latency proportional to how long you spoke; set `streaming_refine = false` in `config.toml` to paste the small model's transcript directly, and dictations over 2 minutes skip the re-pass automatically.
 
-Menu bar: 🎤 idle · live waveform while recording · ✍️ processing · 🟢 streaming. The recording waveform is driven by your mic level, so a flat line while you speak means the wrong input device is selected. The menu lets you toggle LLM cleanup, choose the input mode, set the language (**Universal** auto-detects from the audio; force **English** or **Japanese** for short utterances that auto-detect gets wrong), pick the microphone (the **Microphone** submenu shows which device is in use — virtual devices from Loom/Zoom/etc. can silently become the system default), change the hotkey (Right Option / Right Command / F13), and switch the Whisper / Streaming models.
+Menu bar: 🎤 idle · live waveform while recording · ✍️ processing · 🟢 streaming. The recording waveform is driven by your mic level, so a flat line while you speak means the wrong input device is selected. The menu lets you toggle LLM cleanup, choose the input mode, set the language (**Universal** auto-detects from the audio; force **English** or **Japanese** for short utterances that auto-detect gets wrong), choose the **Japanese Engine** (see below), pick the microphone (the **Microphone** submenu shows which device is in use — virtual devices from Loom/Zoom/etc. can silently become the system default), change the hotkey (Right Option / Right Command / F13), and switch the Whisper / Streaming models.
 
 Config lives at `~/Library/Application Support/sotto/config.toml`.
+
+### Japanese engine (ReazonSpeech)
+
+When **Language** is set to **Japanese**, sotto transcribes with [ReazonSpeech](https://huggingface.co/reazon-research/reazonspeech-k2-v2) (a k2 Zipformer, INT8 ONNX via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), Apache-2.0) instead of Whisper — on real Japanese speech it measures well under half whisper-turbo's character error rate, decodes many times faster than realtime **on CPU** (leaving the GPU to the cleanup LLM), and makes streaming mode's stop latency nearly disappear (the segments are already decoded at full accuracy, so there is nothing to re-transcribe). The ~440MB model downloads on first use into `~/Library/Application Support/sotto/models/` — selecting the engine or switching Language to Japanese triggers it, with a notification when it's ready.
+
+Two tradeoffs, and the reason the **Japanese Engine** menu offers **Whisper** as the alternative:
+
+- ReazonSpeech output is **unpunctuated**, so the cleanup LLM always runs for Japanese (it restores 。and 、). With **Cleanup with LLM** switched off you'll get raw unpunctuated text.
+- English words mixed into Japanese speech come out worse than under Whisper. If you code-switch a lot, pick **Whisper** in the menu.
+
+**Universal** and **English** always use Whisper. Compare the engines on your own voice with `uv run sotto transcribe --language ja --engine reazonspeech` vs `--engine whisper`.
 
 ### Cleanup gate
 
@@ -90,6 +101,7 @@ uv run sotto devices                # list input devices, show selected
 uv run sotto record --seconds 3     # mic level check
 uv run sotto transcribe --seconds 5 # record + Whisper
 uv run sotto transcribe --language ja  # force Japanese (auto/en/ja)
+uv run sotto transcribe --language ja --engine whisper  # A/B the Japanese engines
 uv run sotto stream --seconds 15    # streaming: live segments + final cleaned text
 uv run sotto stream --model mlx-community/whisper-base-mlx  # try a faster model
 uv run sotto clean "um so I think uh we should ship it"

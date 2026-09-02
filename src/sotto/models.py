@@ -1,8 +1,18 @@
-"""Model download and cache management (HuggingFace hub)."""
+"""Model download and cache management.
+
+Whisper/LLM models come from the HuggingFace hub cache; the ReazonSpeech
+ONNX model is a sherpa-onnx GitHub release tarball extracted under the app's
+config directory (it is not distributed on the hub in that form).
+"""
 
 from __future__ import annotations
 
+import glob
 import logging
+import tarfile
+import threading
+import urllib.request
+from pathlib import Path
 
 from huggingface_hub import snapshot_download
 from huggingface_hub.errors import LocalEntryNotFoundError
@@ -56,3 +66,91 @@ def ensure_cached(repo_ids: list[str], progress_cb=None) -> None:
         if progress_cb:
             progress_cb(repo_id, i, len(missing))
         download(repo_id)
+
+
+# -- ReazonSpeech (sherpa-onnx GitHub release tarball, ~440MB) --
+
+REAZON_DIR_NAME = "sherpa-onnx-zipformer-ja-en-reazonspeech-2025-01-17"
+REAZON_MODEL_URL = (
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/"
+    f"{REAZON_DIR_NAME}.tar.bz2"
+)
+# The four files sherpa-onnx's transducer loader needs; exact basenames vary
+# between exports, so resolve them by pattern like hayamimi does.
+_REAZON_FILE_PATTERNS = {
+    "encoder": "encoder-*.int8.onnx",
+    "decoder": "decoder-*.int8.onnx",
+    "joiner": "joiner-*.int8.onnx",
+    "tokens": "tokens.txt",
+}
+# Serializes concurrent download attempts (menu selection racing a dictation's
+# lazy load) so two writers never share one .part file.
+_reazon_lock = threading.Lock()
+
+
+def reazon_model_dir() -> Path:
+    from .config import CONFIG_DIR
+
+    return CONFIG_DIR / "models" / REAZON_DIR_NAME
+
+
+def reazon_files() -> dict[str, str] | None:
+    """Resolve the model's files, or None if any is missing (not downloaded)."""
+    d = reazon_model_dir()
+    out: dict[str, str] = {}
+    for key, pattern in _REAZON_FILE_PATTERNS.items():
+        hits = sorted(glob.glob(str(d / pattern)))
+        if not hits:
+            return None
+        out[key] = hits[0]
+    return out
+
+
+def reazon_is_cached() -> bool:
+    return reazon_files() is not None
+
+
+def download_reazon(progress_cb=None) -> Path:
+    """Download and extract the ReazonSpeech tarball. Idempotent and safe to
+    call from multiple threads; progress_cb(bytes_read, bytes_total) if given.
+    """
+    with _reazon_lock:
+        target = reazon_model_dir()
+        if reazon_is_cached():
+            return target
+        parent = target.parent
+        parent.mkdir(parents=True, exist_ok=True)
+        tmp = parent / f".{REAZON_DIR_NAME}.tar.bz2.part"
+        log.info("Downloading ReazonSpeech model (~440MB) from %s", REAZON_MODEL_URL)
+        req = urllib.request.Request(
+            REAZON_MODEL_URL, headers={"User-Agent": "sotto-download/1.0"}
+        )
+        try:
+            with urllib.request.urlopen(req) as resp, open(tmp, "wb") as f:
+                total = int(resp.headers.get("Content-Length", 0))
+                read = 0
+                while True:
+                    buf = resp.read(1 << 20)
+                    if not buf:
+                        break
+                    f.write(buf)
+                    read += len(buf)
+                    if progress_cb:
+                        progress_cb(read, total)
+            log.info("Extracting to %s", target)
+            with tarfile.open(tmp, "r:bz2") as tf:
+                # Single top-level directory named after the tarball; the
+                # "data" filter refuses path traversal and other surprises.
+                top = tf.getmembers()[0].name.split("/")[0]
+                tf.extractall(parent, filter="data")
+            extracted = parent / top
+            if extracted != target:
+                extracted.replace(target)
+        finally:
+            tmp.unlink(missing_ok=True)
+        if not reazon_is_cached():
+            raise RuntimeError(
+                f"ReazonSpeech download finished but model files are missing "
+                f"under {target}"
+            )
+        return target

@@ -18,6 +18,7 @@ classifiers = [
 dependencies = [
     "mlx-whisper>=0.4.3",
     "mlx-lm>=0.31.3,<0.32",
+    "sherpa-onnx>=1.12",
     "rumps>=0.4.0",
     "sounddevice>=0.5.5",
     "numpy",
