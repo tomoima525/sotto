@@ -65,6 +65,16 @@ LANGUAGE_CHOICES = {
     "ja": "Japanese",
 }
 
+# Engine used when the language is set to Japanese ("auto"/"en" always use
+# Whisper). ReazonSpeech (k2 zipformer via sherpa-onnx, CPU) measures well
+# under half whisper-turbo's error rate on real Japanese speech, but emits no
+# punctuation (the LLM cleanup restores it) and handles English words mixed
+# into Japanese worse than Whisper does.
+JA_ENGINE_CHOICES = {
+    "reazonspeech": "ReazonSpeech — best Japanese accuracy",
+    "whisper": "Whisper — better for mixed EN/JA",
+}
+
 
 @dataclass
 class Config:
@@ -77,6 +87,7 @@ class Config:
     # in config.toml to always run the model (the pre-1.2 behaviour).
     cleanup_gate: bool = True
     language: str = "auto"  # "auto" | whisper language code ("en", "ja", ...)
+    ja_engine: str = "reazonspeech"  # "reazonspeech" | "whisper" (see JA_ENGINE_CHOICES)
     input_device: str = "default"  # device name, or "default" for system default
     input_mode: str = "hold"  # "hold" | "toggle" | "streaming"
     streaming_whisper_model: str = DEFAULT_STREAMING_WHISPER_MODEL

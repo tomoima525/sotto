@@ -14,6 +14,7 @@ from .config import (
     Config,
     HOTKEY_CHOICES,
     INPUT_MODE_CHOICES,
+    JA_ENGINE_CHOICES,
     LANGUAGE_CHOICES,
     STREAMING_WHISPER_MODEL_CHOICES,
     WHISPER_MODEL_CHOICES,
@@ -98,6 +99,13 @@ class DictationApp(rumps.App):
             item.state = code == self.config.language
             language_menu.add(item)
 
+        ja_engine_menu = rumps.MenuItem("Japanese Engine")
+        for engine, label in JA_ENGINE_CHOICES.items():
+            item = rumps.MenuItem(label, callback=self._pick_ja_engine)
+            item._ja_engine = engine
+            item.state = engine == self.config.ja_engine
+            ja_engine_menu.add(item)
+
         input_mode_menu = rumps.MenuItem("Input Mode")
         for mode, label in INPUT_MODE_CHOICES.items():
             item = rumps.MenuItem(label, callback=self._pick_input_mode)
@@ -112,6 +120,7 @@ class DictationApp(rumps.App):
             self.cleanup_item,
             input_mode_menu,
             language_menu,
+            ja_engine_menu,
             self.mic_menu,
             hotkey_menu,
             model_menu,
@@ -141,11 +150,19 @@ class DictationApp(rumps.App):
         def boot():
             repos = [self.config.whisper_model, self.config.llm_model]
             missing = [r for r in repos if not models.is_cached(r)]
-            if missing:
+            need_reazon = self._reazon_configured() and not models.reazon_is_cached()
+            if missing or need_reazon:
                 self._set_title("⬇️")
                 for repo in missing:
                     log.info("Downloading %s ...", repo)
                     models.download(repo)
+                if need_reazon:
+                    try:
+                        models.download_reazon()
+                    except Exception:
+                        # Never brick startup over the optional ja model; the
+                        # pipeline falls back to Whisper until it's fetched.
+                        log.exception("ReazonSpeech download failed")
             self.pipeline.start()
             self.hotkey.start()
 
@@ -203,6 +220,50 @@ class DictationApp(rumps.App):
         self.config.save()
         self.pipeline.transcriber.language = code
         log.info("Language set to %r", code)
+        self._ensure_reazon_async()
+
+    # -- Japanese engine --
+
+    def _reazon_configured(self) -> bool:
+        return (
+            self.config.language == "ja"
+            and self.config.ja_engine == "reazonspeech"
+        )
+
+    def _ensure_reazon_async(self) -> None:
+        """Prefetch the ReazonSpeech model when the current config needs it,
+        so the download happens at selection time, not mid-dictation."""
+        if not self._reazon_configured() or models.reazon_is_cached():
+            return
+        import threading
+
+        rumps.notification(
+            "Sotto", "", "Downloading the ReazonSpeech model (~440 MB)…"
+        )
+
+        def fetch():
+            try:
+                models.download_reazon()
+                rumps.notification("Sotto", "", "ReazonSpeech model ready.")
+            except Exception:
+                log.exception("ReazonSpeech download failed")
+                rumps.notification(
+                    "Sotto", "", "ReazonSpeech download failed — see logs. "
+                    "Japanese dictation falls back to Whisper until it succeeds."
+                )
+
+        threading.Thread(target=fetch, daemon=True, name="reazon-dl").start()
+
+    def _pick_ja_engine(self, sender) -> None:
+        engine = sender._ja_engine
+        if engine == self.config.ja_engine:
+            return
+        for item in self.menu["Japanese Engine"].values():
+            item.state = item._ja_engine == engine
+        self.config.ja_engine = engine
+        self.config.save()
+        log.info("Japanese engine set to %r", engine)
+        self._ensure_reazon_async()
 
     # -- microphone menu --
 

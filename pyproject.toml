@@ -18,6 +18,12 @@ classifiers = [
 dependencies = [
     "mlx-whisper>=0.4.3",
     "mlx-lm>=0.31.3,<0.32",
+    # sherpa-onnx-core carries the native dylibs (libonnxruntime etc.); the
+    # sherpa-onnx wheel's dependency on it is declared dynamically and uv's
+    # resolver misses it, so declare it explicitly or imports fail with
+    # "Library not loaded: @rpath/libonnxruntime.dylib".
+    "sherpa-onnx>=1.12",
+    "sherpa-onnx-core>=1.12",
     "rumps>=0.4.0",
     "sounddevice>=0.5.5",
     "numpy",

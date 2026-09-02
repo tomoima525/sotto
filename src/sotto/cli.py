@@ -10,7 +10,7 @@ import logging
 import sys
 import time
 
-from .config import Config, LANGUAGE_CHOICES
+from .config import Config, JA_ENGINE_CHOICES, LANGUAGE_CHOICES
 
 
 def _setup_logging(debug: bool) -> None:
@@ -39,6 +39,11 @@ def _disable_tqdm_mp_lock() -> None:
     tqdm.set_lock(threading.RLock())
 
 
+def _resolve_engine(args, config: Config, lang: str) -> str:
+    """Engine for a CLI run: explicit --engine, else what the app would use."""
+    return args.engine or (config.ja_engine if lang == "ja" else "whisper")
+
+
 def cmd_download(args, config: Config) -> None:
     from . import models
 
@@ -46,6 +51,21 @@ def cmd_download(args, config: Config) -> None:
         print(f"Downloading {repo} ...")
         path = models.download(repo)
         print(f"  -> {path}")
+
+    if args.reazonspeech or (
+        config.language == "ja" and config.ja_engine == "reazonspeech"
+    ):
+        if models.reazon_is_cached():
+            print("ReazonSpeech model already present.")
+            return
+        print("Downloading ReazonSpeech model (~440MB) ...")
+
+        def progress(read, total):
+            if total:
+                print(f"\r  {100 * read / total:5.1f}%", end="", flush=True)
+
+        models.download_reazon(progress)
+        print(f"\n  -> {models.reazon_model_dir()}")
 
 
 def cmd_devices(args, config: Config) -> None:
@@ -93,10 +113,17 @@ def cmd_record(args, config: Config) -> None:
 
 
 def cmd_transcribe(args, config: Config) -> None:
-    from .transcriber import Transcriber
+    lang = args.language or config.language
+    if _resolve_engine(args, config, lang) == "reazonspeech":
+        from .reazon import ReazonTranscriber
 
-    transcriber = Transcriber(config.whisper_model, args.language or config.language)
-    print("Warming up Whisper...")
+        print("Engine: ReazonSpeech (first use downloads ~440MB)")
+        transcriber = ReazonTranscriber()
+    else:
+        from .transcriber import Transcriber
+
+        transcriber = Transcriber(config.whisper_model, lang)
+    print("Warming up...")
     transcriber.warmup()
     audio = _record_seconds(args.seconds, config)
     t0 = time.monotonic()
@@ -114,9 +141,16 @@ def cmd_stream(args, config: Config) -> None:
     from .vad import EnergyVADSegmenter
 
     lang = args.language or config.language
-    model = args.model or config.streaming_whisper_model
-    print(f"Streaming model: {model}  (language={lang})")
-    transcriber = Transcriber(model, lang)
+    engine = _resolve_engine(args, config, lang)
+    if engine == "reazonspeech":
+        from .reazon import ReazonTranscriber
+
+        print("Streaming engine: ReazonSpeech (first use downloads ~440MB)")
+        transcriber = ReazonTranscriber()
+    else:
+        model = args.model or config.streaming_whisper_model
+        print(f"Streaming model: {model}  (language={lang})")
+        transcriber = Transcriber(model, lang)
     print("Warming up streaming model...")
     transcriber.warmup()
 
@@ -127,7 +161,10 @@ def cmd_stream(args, config: Config) -> None:
     recorder = Recorder(device_name=config.input_device)
     parts: list[str] = []
     seg_audio: list = []  # finalized segments' audio, for the refine pass
-    refine = config.streaming_refine and not args.no_refine
+    # ReazonSpeech already decodes segments at full accuracy: nothing to refine.
+    refine = (
+        config.streaming_refine and not args.no_refine and engine != "reazonspeech"
+    )
 
     # Draft preview of the in-progress phrase, overwritten in place on a tty
     # (mirrors the pipeline's DRAFT_* behaviour so latency is measurable here).
@@ -399,7 +436,13 @@ def main() -> None:
     parser.add_argument("--debug", action="store_true", help="verbose logging")
     sub = parser.add_subparsers(dest="command")
 
-    sub.add_parser("download", help="download models into the HF cache")
+    p = sub.add_parser("download", help="download models into the HF cache")
+    p.add_argument(
+        "--reazonspeech",
+        action="store_true",
+        help="also fetch the ReazonSpeech ja model (~440MB; fetched "
+        "automatically when the config already uses it)",
+    )
 
     sub.add_parser("devices", help="list audio input devices")
 
@@ -413,6 +456,12 @@ def main() -> None:
         choices=list(LANGUAGE_CHOICES),
         help="transcription language (default: config value; auto = detect from audio)",
     )
+    p.add_argument(
+        "--engine",
+        choices=list(JA_ENGINE_CHOICES),
+        help="ASR engine (default: config's ja_engine when the language is ja, "
+        "else whisper) — for A/B testing the Japanese engines",
+    )
 
     p = sub.add_parser("stream", help="test streaming dictation headlessly")
     p.add_argument("--seconds", type=float, default=15)
@@ -422,6 +471,12 @@ def main() -> None:
         help="transcription language (default: config value)",
     )
     p.add_argument("--model", help="streaming whisper repo (default: config value)")
+    p.add_argument(
+        "--engine",
+        choices=list(JA_ENGINE_CHOICES),
+        help="ASR engine (default: config's ja_engine when the language is ja, "
+        "else whisper)",
+    )
     p.add_argument("--no-cleanup", action="store_true", help="skip the LLM cleanup pass")
     p.add_argument(
         "--no-refine",

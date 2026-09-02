@@ -20,6 +20,7 @@ import numpy as np
 from .cleaner import Cleaner
 from .config import Config
 from .injector import inject
+from .reazon import ReazonTranscriber
 from .recorder import SAMPLE_RATE, Recorder
 from .transcriber import Transcriber
 from .vad import EnergyVADSegmenter
@@ -83,6 +84,10 @@ class Pipeline:
             config.streaming_whisper_model, config.language
         )
         self._stream_warmed = False
+        # Japanese engine (config.ja_engine): built lazily on first ja use so
+        # non-ja sessions never load sherpa-onnx or download its model.
+        self._reazon: ReazonTranscriber | None = None
+        self._reazon_failed = False  # load/download failed; Whisper stands in
         self.vad = EnergyVADSegmenter(
             min_silence_s=config.streaming_silence_ms / 1000,
             max_segment_s=config.streaming_max_segment_s,
@@ -139,6 +144,45 @@ class Pipeline:
             except Exception:
                 log.exception("Partial-text callback failed")
 
+    # -- engine selection --
+    #
+    # Resolved per call, not at startup, so menu changes to Language or
+    # Japanese Engine take effect on the next dictation without a restart.
+
+    def _reazon_active(self) -> bool:
+        return self.config.language == "ja" and self.config.ja_engine == "reazonspeech"
+
+    def _ja_engine(self) -> ReazonTranscriber | None:
+        """The ja transcriber when ReazonSpeech is configured AND loadable;
+        None means use Whisper (not configured, or its model failed to
+        download/load — in which case we stay on Whisper until the model
+        shows up cached, e.g. the menu's retried download succeeded)."""
+        if not self._reazon_active():
+            return None
+        if self._reazon_failed:
+            from . import models
+
+            if not models.reazon_is_cached():
+                return None
+        if self._reazon is None:
+            self._reazon = ReazonTranscriber()
+        try:
+            self._reazon.load()
+        except Exception:
+            self._reazon_failed = True
+            log.exception("ReazonSpeech unavailable; falling back to Whisper")
+            return None
+        self._reazon_failed = False
+        return self._reazon
+
+    def _main_transcribe(self, audio) -> str:
+        engine = self._ja_engine()
+        return (engine or self.transcriber).transcribe(audio)
+
+    def _stream_transcribe(self, audio) -> str:
+        engine = self._ja_engine()
+        return (engine or self.stream_transcriber).transcribe(audio)
+
     def _join_transcript(self, draft: str = "") -> str:
         parts = self._transcript_parts + ([draft] if draft else [])
         sep = "" if self.config.language == "ja" else " "
@@ -150,6 +194,14 @@ class Pipeline:
             self.cleaner.warmup()
         except Exception:
             log.exception("Model warmup failed")
+        # Downloads the model on a fresh install (menu/boot normally prefetch
+        # it, so the blocking download here is the headless fallback path).
+        engine = self._ja_engine()
+        if engine is not None:
+            try:
+                engine.warmup()
+            except Exception:
+                log.exception("ReazonSpeech warmup failed")
         self._set_state(State.IDLE)
 
         while True:
@@ -191,7 +243,7 @@ class Pipeline:
 
     def _process(self, audio) -> None:
         try:
-            text = self.transcriber.transcribe(audio)
+            text = self._main_transcribe(audio)
             if not text:
                 log.info("Nothing transcribed; skipping")
                 return
@@ -206,7 +258,13 @@ class Pipeline:
     def _start_streaming(self) -> None:
         if self.state != State.IDLE:
             return
-        if not self._stream_warmed:
+        engine = self._ja_engine()
+        if engine is not None:
+            try:
+                engine.warmup()  # no-op once warmed
+            except Exception:
+                log.exception("ReazonSpeech warmup failed")
+        elif not self._stream_warmed:
             try:
                 self.stream_transcriber.warmup()
             except Exception:
@@ -262,7 +320,7 @@ class Pipeline:
         if len(cur) < int(DRAFT_MIN_AUDIO_S * SAMPLE_RATE):
             return
         try:
-            draft = self.stream_transcriber.transcribe(cur)
+            draft = self._stream_transcribe(cur)
         except Exception:
             log.exception("Draft transcription failed")
             draft = ""
@@ -278,7 +336,12 @@ class Pipeline:
         model may still recover that speech. Past REFINE_MAX_S the refine pass
         won't run, so the collected audio is freed instead of accumulating.
         """
-        if not self.config.streaming_refine:
+        if not self.config.streaming_refine or (
+            self._reazon_active() and not self._reazon_failed
+        ):
+            # ReazonSpeech decodes the live segments at full accuracy already;
+            # a second pass over the same audio has nothing to add. (When it
+            # failed and Whisper is standing in, refine stays worthwhile.)
             return
         self._stream_audio_s += len(seg) / SAMPLE_RATE
         if self._stream_audio_s <= REFINE_MAX_S:
@@ -292,7 +355,9 @@ class Pipeline:
         whole dictation when possible, else the joined small-model parts."""
         fast = self._join_transcript()
         audio, self._segment_audio = self._segment_audio, []
-        if not self.config.streaming_refine or not audio:
+        if not self.config.streaming_refine or not audio or (
+            self._reazon_active() and not self._reazon_failed
+        ):
             return fast
         try:
             t0 = time.monotonic()
@@ -312,7 +377,7 @@ class Pipeline:
     def _transcribe_and_emit(self, seg) -> None:
         self._collect_for_refine(seg)
         try:
-            text = self.stream_transcriber.transcribe(seg)
+            text = self._stream_transcribe(seg)
         except Exception:
             log.exception("Streaming segment transcription failed")
             return
